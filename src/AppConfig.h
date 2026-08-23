@@ -1,0 +1,43 @@
+#pragma once
+
+#include <Arduino.h>
+
+// -----------------------------------------------------------------------------
+// Persistent runtime configuration (stored in NVS via the Preferences library).
+// This replaces the old "credentials file + OS-mode / normal-mode" switch of the
+// MicroPython version: there is only ever one firmware mode. If no WiFi
+// credentials are stored (or the connection fails), the device falls back to
+// a configuration Access-Point while the same web server keeps running.
+// -----------------------------------------------------------------------------
+struct AppConfig {
+    // WiFi (station)
+    String wifiSsid;
+    String wifiPassword;
+
+    // MQTT broker
+    String mqttHost;
+    uint16_t mqttPort = 1883;
+    String mqttUser;
+    String mqttPassword;
+    String mqttTopicRoot = "truma";      // -> service/<root>/...
+    String deviceName = "inetbox2mqtt";  // used as MQTT client id / HA device name
+
+    // Web UI / AP fallback
+    String apPassword = "inetbox2mqtt";  // must be >= 8 chars for WPA2
+
+    bool haDiscoveryEnabled = true;
+
+    // Time (ms) after a successful MQTT (re)connect during which incoming
+    // command messages are discarded. This prevents stale/queued broker
+    // messages from unintentionally driving the aircon right after boot.
+    uint32_t mqttBootDiscardMs = 4000;
+
+    bool isWifiConfigured() const { return wifiSsid.length() > 0; }
+};
+
+class AppConfigStore {
+public:
+    static AppConfig load();
+    static void save(const AppConfig &cfg);
+    static void reset();
+};

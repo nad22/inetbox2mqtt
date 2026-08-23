@@ -1,0 +1,50 @@
+# Example Lovelace dashboard view for inetbox2mqtt
+# Import via Settings -> Dashboards -> Edit Dashboard -> Raw configuration editor,
+# or copy individual cards into an existing view.
+#
+# Adjust entity ids if you changed the MQTT topic prefix ("truma" by default).
+title: Truma / Aventa
+views:
+  - title: Klima & Heizung
+    path: truma
+    icon: mdi:air-conditioner
+    cards:
+      - type: thermostat
+        entity: climate.truma_aventa
+
+      - type: entities
+        title: Verbindung
+        entities:
+          - entity: binary_sensor.truma_alive
+            name: CPplus verbunden
+          - entity: sensor.truma_release
+            name: Firmware
+          - entity: sensor.truma_clock
+            name: CPplus Uhrzeit
+
+      - type: entities
+        title: Heizung / Warmwasser
+        entities:
+          - entity: sensor.truma_current_temp_room
+            name: Raumtemperatur
+          - entity: number.truma_target_temp_room
+            name: Raum-Solltemperatur
+          - entity: select.truma_heating_mode
+            name: Lüfterstufe
+          - entity: sensor.truma_current_temp_water
+            name: Wassertemperatur
+          - entity: select.truma_target_temp_water
+            name: Warmwasser-Modus
+          - entity: select.truma_energy_mix
+            name: Energiequelle
+          - entity: select.truma_el_power_level
+            name: El. Leistung
+          - entity: sensor.truma_operating_status
+            name: Betriebsstatus
+          - entity: sensor.truma_error_code
+            name: Fehlercode
+
+      - type: button
+        entity: button.truma_reboot
+        name: Gerät neu starten
+        icon: mdi:restart

@@ -1,9 +1,9 @@
 ## Electrics
-A LIN-UART converter is necessary for communication with the TRUMA CPplus. Since there are now several boards available for purchase that already have the converter integrated, I have moved the level converter topic to the documentation for all those who want to build the level converter themselves.
+A LIN-UART converter is necessary for communication with the TRUMA CPplus. Since there are now several boards available for purchase that already have the converter integrated (e.g. [WoMoLin lin-interface](https://womolin.de/products/lin-interface/)), building your own is optional.
 
-There is no 12V potential at the RJ12 (LIN connector). Therefore, the supply voltage must be obtained separately from the car electrical system. 
+There is no 12V potential at the RJ12 (LIN connector). Therefore, the supply voltage must be obtained separately from the vehicle's electrical system.
 
-The electrical connection via the TJA1020 to the UART of the ESP32/RP2 pico is made according to the circuit diagram shown. 
+The electrical connection via a TJA1020 LIN transceiver to the ESP32 UART is made according to the circuit diagram shown.
 
 <div align = center>
 
@@ -11,9 +11,9 @@ The electrical connection via the TJA1020 to the UART of the ESP32/RP2 pico is m
 
 </div>
 
-Examples for the implementation of the concrete connection can be found under [Connection](https://github.com/mc0110/inetbox2mqtt/issues/20).
+Examples for the implementation of the concrete connection can be found under [Connection](https://github.com/mc0110/inetbox2mqtt/issues/20) (upstream project).
 
-On the **ESP32** we recommend the use of UART2 (**Tx - GPIO17, Rx - GPIO16**):
+This firmware uses **UART2** of the ESP32 (**Tx - GPIO17, Rx - GPIO16**), matching `include/Pins.h`:
 
 <div align = center>
 
@@ -21,17 +21,8 @@ On the **ESP32** we recommend the use of UART2 (**Tx - GPIO17, Rx - GPIO16**):
 
 </div>
 
-On the **RP2 pico w** we recommend the use of UART1 (**Tx - GPIO04, Rx - GPIO05**):
+The transceiver's RXD/TXD lines connect directly to the ESP32 UART2 pins. No level shifting is needed (thanks to the internal construction of the TJA1020) - it also works fine at 3.3V logic levels, even when the TJA1020 itself is powered from 12V.
 
-<div align = center>
+**It is important to connect not only the signal lines but also a common ground between the ESP32, the transceiver board and the vehicle's LIN bus.** A missing ground connection is by far the most common reason for a non-working setup.
 
-![grafik](https://user-images.githubusercontent.com/10268240/201338579-29c815ca-e5ef-4f25-b015-1749a59b3e99.png)
-</div>
-
-These are to be connected to the TJA1020. No level shift is needed (thanks to the internal construction of the TJA1020). It also works on 3.3V levels, even if the TJA1020 is operated at 12V. 
-
-**It is important to connect not only the signal level but also the ground connection.**
-
-![Alt text](image.png)
-
-Here you see an example with a missing ground connection. It cannot work like that.
+If you need to change the pins (e.g. a different ESP32 board revision), edit `LIN_UART_RX_PIN` / `LIN_UART_TX_PIN` in `include/Pins.h` and re-flash.
