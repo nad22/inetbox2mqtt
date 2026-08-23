@@ -14,8 +14,7 @@
 // impersonates the "inetbox" LIN slave node, faithfully reproducing the exact
 // byte sequences of the original MicroPython implementation (registration
 // handshake, heartbeat, alive-poll (raw PID 0xD8) and the 6-frame buffer
-// up-/download used to read status and to write Aventa aircon / Combi heater
-// commands).
+// up-/download used to read status and to write Aventa aircon commands).
 // -----------------------------------------------------------------------------
 class LinBus {
 public:

@@ -19,14 +19,6 @@ add-on) is enough to get the entities back if they were ever purged.
 | `sensor.<root>_release` | sensor | Firmware version |
 | `sensor.<root>_clock` | sensor | Clock reported by the CPplus panel |
 | `sensor.<root>_current_temp_room` | sensor | Current room temperature |
-| `sensor.<root>_current_temp_water` | sensor | Current boiler water temperature |
-| `sensor.<root>_operating_status` | sensor | Combi heater operating status |
-| `sensor.<root>_error_code` | sensor | Combi heater error code |
-| `number.<root>_target_temp_room` | number | Room heating target temperature |
-| `select.<root>_target_temp_water` | select | Boiler mode: off / eco (40°C) / high (60°C) / boost |
-| `select.<root>_heating_mode` | select | Heater fan mode: off / eco / high |
-| `select.<root>_energy_mix` | select | Combi energy source: none / gas / electricity / mix |
-| `select.<root>_el_power_level` | select | Electrical power limit: 0 / 900 / 1800 W |
 | `climate.<root>_aventa` | **climate** | Full Aventa Comfort (2. Gen) aircon control |
 | `button.<root>_reboot` | button | Restart the ESP32 |
 
@@ -58,8 +50,8 @@ only accepts 20-30°C - out-of-range values are simply ignored by the CPplus).
 ## Example dashboard card
 
 See [dashboard.yaml](dashboard.yaml) for a ready-to-use Lovelace view
-containing a thermostat card for the Aventa aircon plus a glance card for the
-Combi heater / boiler. Import it via **Settings → Dashboards → Edit
+containing a thermostat card for the Aventa aircon plus a glance card for
+connection/status. Import it via **Settings → Dashboards → Edit
 Dashboard → Raw configuration editor**, or copy individual cards into an
 existing dashboard.
 

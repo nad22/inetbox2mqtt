@@ -1,8 +1,8 @@
 
 # inetbox2mqtt (C++ / ESP32 rewrite)
 
-Control your **TRUMA Aventa Comfort (2. Gen)** air-conditioning - and monitor
-the Combi heater it shares a LIN bus with - via MQTT and Home Assistant.
+Control your **TRUMA Aventa Comfort (2. Gen)** air-conditioning via MQTT and
+Home Assistant.
 
 [![Badge License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://github.com/git/git-scm.com/blob/main/MIT-LICENSE.txt)
 &nbsp;
@@ -32,10 +32,11 @@ the Combi heater it shares a LIN bus with - via MQTT and Home Assistant.
   configured network can't be reached), it simply also opens a fallback
   Access Point so you can reach that same web page.
 - **Focused on the Truma Aventa Comfort (2. Gen)** air-conditioning unit.
-  Combi heater status is still read and can still be controlled (it's on the
-  same bus and useful for monitoring), but DuoControl and MPU6050
-  spirit-level add-ons from the upstream project were dropped to keep the
-  rewrite maintainable.
+  Combi heater / hot-water control and monitoring has been **removed
+  entirely** (only the current room temperature is still read from its
+  status buffer, since it feeds the Aventa climate entity's current
+  temperature); DuoControl and MPU6050 spirit-level add-ons from the
+  upstream project were dropped too, to keep the rewrite maintainable.
 - **Stale MQTT commands are discarded on (re)connect.** See
   [below](#why-stale-commands-are-discarded).
 - **Native Home Assistant `climate` entity** for the aircon instead of a set
@@ -48,7 +49,7 @@ the Combi heater it shares a LIN bus with - via MQTT and Home Assistant.
   reads status, writes commands) - protocol-compatible with CPplus ≥ C4.00.00
 - MQTT status/control with Home Assistant MQTT auto-discovery
 - Built-in web UI (no app, no cloud) for Wi-Fi/MQTT setup **and** for
-  monitoring/controlling the aircon and heater directly from the ESP32
+  monitoring/controlling the aircon directly from the ESP32
 - Automatically falls back to a configuration Access Point when no working
   Wi-Fi connection is available
 - Discards MQTT messages that were queued/retained on the broker before boot,
@@ -120,34 +121,19 @@ Default topic prefix is `truma` (configurable in the web UI); topics are
 | `clock` | `hh:mm` | CPplus clock |
 | `release` | `x.y.z` | Firmware version |
 | `current_temp_room` | °C | Current room temperature |
-| `target_temp_room` | °C | Target room temperature |
-| `current_temp_water` | °C | Current boiler water temperature |
-| `target_temp_water` | °C | Target boiler water temperature |
-| `energy_mix` | `none`/`gas`/`electricity`/`mix` | Combi heater energy source |
-| `el_power_level` | `0`/`900`/`1800` | Electrical power limit (W) |
-| `heating_mode` | `off`/`eco`/`high` | Heater fan mode |
 | `aircon_operating_mode` | `off`/`vent`/`cool`/`hot`/`auto` | Aventa operating mode |
 | `aircon_vent_mode` | `low`/`mid`/`high`/`night`/`auto` | Aventa fan mode |
 | `target_temp_aircon` | °C | Aventa target temperature |
-| `operating_status` | text | Combi heater operating status |
-| `error_code` | number | Combi heater error code |
 
 ### Commands (subscribe / publish to)
 
 | Topic suffix | Payload | Description |
 |---|---|---|
-| `target_temp_room` | °C (0, 5-30) | Set target room temperature |
-| `target_temp_water` | `0`/`40`/`60`/`200` | Set boiler mode (off/eco/high/boost) |
-| `energy_mix` | `none`/`gas`/`electricity`/`mix` | Set energy source |
-| `el_power_level` | `0`/`900`/`1800` | Set electrical power limit |
-| `heating_mode` | `off`/`eco`/`high` | Set heater fan mode |
 | `aircon_operating_mode` | `off`/`vent`/`cool`/`hot`/`auto` | Set Aventa mode |
 | `aircon_vent_mode` | `low`/`mid`/`high`/`night`/`auto` | Set Aventa fan mode |
 | `target_temp_aircon` | °C (16-32) | Set Aventa target temperature |
 | `reboot` | `1` | Reboot the ESP32 |
 
-To switch the room heater on, `target_temp_room > 4` and `heating_mode=eco`
-(or `high`) must both be set - send both commands right after each other.
 For the Aventa, only certain `aircon_operating_mode` / `aircon_vent_mode`
 combinations make sense (`off`+`low`, `auto`+`auto`,
 `vent`/`cool`/`hot`+`low`/`mid`/`high`).

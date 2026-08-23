@@ -89,50 +89,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <button class="action" onclick="sendAircon()">Übernehmen</button>
     </div>
     <div class="card">
-      <h2>Heizung / Warmwasser</h2>
-      <div class="grid2">
-        <div>
-          <label>Raum-Solltemperatur (&deg;C)</label>
-          <input type="number" id="c_target_temp_room" min="5" max="30" step="1">
-        </div>
-        <div>
-          <label>Lüfterstufe</label>
-          <select id="c_heating_mode">
-            <option value="off">Aus</option>
-            <option value="eco">Eco</option>
-            <option value="high">Hoch</option>
-          </select>
-        </div>
-        <div>
-          <label>Warmwasser</label>
-          <select id="c_target_temp_water">
-            <option value="0">Aus</option>
-            <option value="40">Eco (40&deg;C)</option>
-            <option value="60">Hoch (60&deg;C)</option>
-            <option value="200">Boost</option>
-          </select>
-        </div>
-        <div>
-          <label>Energiequelle</label>
-          <select id="c_energy_mix">
-            <option value="none">Keine</option>
-            <option value="gas">Gas</option>
-            <option value="electricity">Strom</option>
-            <option value="mix">Mix</option>
-          </select>
-        </div>
-        <div>
-          <label>El. Leistung (W)</label>
-          <select id="c_el_power_level">
-            <option value="0">0</option>
-            <option value="900">900</option>
-            <option value="1800">1800</option>
-          </select>
-        </div>
-      </div>
-      <button class="action" onclick="sendHeater()">Übernehmen</button>
-    </div>
-    <div class="card">
       <button class="action secondary" onclick="reboot()">Gerät neu starten</button>
     </div>
   </section>
@@ -214,7 +170,7 @@ async function refreshStatus(){
     let html='';
     for(const [k,v] of Object.entries(d.values)){ html += '<div class="row"><span>'+k+'</span><span>'+v+'</span></div>'; }
     document.getElementById('s_values').innerHTML = html;
-    for(const key of ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon','target_temp_room','heating_mode','target_temp_water','energy_mix','el_power_level']){
+    for(const key of ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon']){
       const el = document.getElementById('c_'+key);
       if(el && d.values[key]!==undefined && document.activeElement!==el) el.value = d.values[key];
     }
@@ -231,13 +187,6 @@ function sendAircon(){
   setValue('aircon_operating_mode', document.getElementById('c_aircon_operating_mode').value);
   setValue('aircon_vent_mode', document.getElementById('c_aircon_vent_mode').value);
   setValue('target_temp_aircon', document.getElementById('c_target_temp_aircon').value);
-}
-function sendHeater(){
-  setValue('target_temp_room', document.getElementById('c_target_temp_room').value);
-  setValue('heating_mode', document.getElementById('c_heating_mode').value);
-  setValue('target_temp_water', document.getElementById('c_target_temp_water').value);
-  setValue('energy_mix', document.getElementById('c_energy_mix').value);
-  setValue('el_power_level', document.getElementById('c_el_power_level').value);
 }
 async function reboot(){
   if(!confirm('Gerät wirklich neu starten?')) return;

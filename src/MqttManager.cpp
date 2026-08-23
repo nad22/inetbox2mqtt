@@ -169,9 +169,6 @@ void MqttManager::publishDiscovery() {
         {"release", "Firmware Release", nullptr, nullptr},
         {"clock", "CPplus Clock", nullptr, nullptr},
         {"current_temp_room", "Room Temperature", "temperature", "°C"},
-        {"current_temp_water", "Water Temperature", "temperature", "°C"},
-        {"operating_status", "Heater Operating Status", nullptr, nullptr},
-        {"error_code", "Heater Error Code", nullptr, nullptr},
     };
     for (auto &s : sensors) {
         JsonDocument d;
@@ -180,56 +177,6 @@ void MqttManager::publishDiscovery() {
         if (s.devClass) d["device_class"] = s.devClass;
         if (s.unit) d["unit_of_measurement"] = s.unit;
         publishEntity("sensor", s.id, d);
-    }
-
-    // --- heater (Combi) controls ---------------------------------------------
-    {
-        JsonDocument d;
-        d["name"] = "Room Target Temperature";
-        d["command_topic"] = cmd + "target_temp_room";
-        d["state_topic"] = st + "target_temp_room";
-        d["min"] = 5;
-        d["max"] = 30;
-        d["step"] = 1;
-        d["unit_of_measurement"] = "°C";
-        d["mode"] = "slider";
-        publishEntity("number", "target_temp_room", d);
-    }
-    {
-        JsonDocument d;
-        d["name"] = "Water Heater Mode";
-        d["command_topic"] = cmd + "target_temp_water";
-        d["state_topic"] = st + "target_temp_water";
-        JsonArray opt = d["options"].to<JsonArray>();
-        opt.add("0"); opt.add("40"); opt.add("60"); opt.add("200");
-        publishEntity("select", "target_temp_water", d);
-    }
-    {
-        JsonDocument d;
-        d["name"] = "Heating Fan Mode";
-        d["command_topic"] = cmd + "heating_mode";
-        d["state_topic"] = st + "heating_mode";
-        JsonArray opt = d["options"].to<JsonArray>();
-        opt.add("off"); opt.add("eco"); opt.add("high");
-        publishEntity("select", "heating_mode", d);
-    }
-    {
-        JsonDocument d;
-        d["name"] = "Energy Mix";
-        d["command_topic"] = cmd + "energy_mix";
-        d["state_topic"] = st + "energy_mix";
-        JsonArray opt = d["options"].to<JsonArray>();
-        opt.add("none"); opt.add("gas"); opt.add("electricity"); opt.add("mix");
-        publishEntity("select", "energy_mix", d);
-    }
-    {
-        JsonDocument d;
-        d["name"] = "Electrical Power Level";
-        d["command_topic"] = cmd + "el_power_level";
-        d["state_topic"] = st + "el_power_level";
-        JsonArray opt = d["options"].to<JsonArray>();
-        opt.add("0"); opt.add("900"); opt.add("1800");
-        publishEntity("select", "el_power_level", d);
     }
 
     // --- Aventa aircon as a proper HA climate entity --------------------------

@@ -7,15 +7,16 @@
 // TrumaStatus
 //
 // C++ port of the relevant parts of inetboxapp.py / conversions.py, scoped to
-// the Truma Aventa Comfort (2. Gen) air-conditioning unit plus the read-only
-// Combi heater status fields that travel over the same LIN bus and are useful
-// for monitoring in Home Assistant.
+// the Truma Aventa Comfort (2. Gen) air-conditioning unit. Combi heater /
+// hot-water control has been removed entirely; the only value still read
+// from the heater's status buffer is the current room temperature, which
+// feeds the Aventa climate entity's "current_temperature".
 //
 // It owns:
 //   - the current status values (raw + human readable),
 //   - the "dirty" flags that decide whether a value must be published on MQTT,
 //   - the logic to decode status buffers received from the CPplus and to
-//     encode the write-buffers used to command the aircon / heater.
+//     encode the write-buffer used to command the aircon.
 // -----------------------------------------------------------------------------
 class TrumaStatus {
 public:
@@ -44,14 +45,11 @@ public:
     bool isAlive() const { return alive_; }
 
     // ---- Outgoing buffer construction ----
-    // Returns true if there is a pending heater (Combi) command to send.
-    bool hasHeaterUpload() const { return uploadHeater_ > 0; }
     bool hasAirconUpload() const { return uploadAircon_ > 0; }
-    bool hasAnyUpload() const { return hasHeaterUpload() || hasAirconUpload(); }
+    bool hasAnyUpload() const { return hasAirconUpload(); }
 
     // Builds the 7 LIN frames (each including its trailing checksum byte) for
-    // whichever buffer is currently pending, prioritising the aircon buffer
-    // (Aventa is the primary target device of this firmware).
+    // the pending aircon command buffer, if any.
     std::vector<std::vector<uint8_t>> buildPendingWriteFrames();
 
     int &uploadWaitCounter() { return uploadWait_; }
@@ -59,15 +57,7 @@ public:
 private:
     // raw values
     uint8_t commandCounter_ = 1;
-    uint16_t targetTempRoomRaw_ = 0;
-    uint8_t heatingModeRaw_ = 0;           // 0 off, 1 eco, 10 high
-    uint16_t elPowerLevelRaw_ = 0;         // 0 / 900 / 1800
-    uint16_t targetTempWaterRaw_ = 0;
-    uint8_t energyMixRaw_ = 1;             // bitmask: 1 gas, 2 electricity, 3 mix
-    uint16_t currentTempWaterRaw_ = 0;
     uint16_t currentTempRoomRaw_ = 0;
-    uint8_t operatingStatusRaw_ = 0;
-    uint16_t errorCodeRaw_ = 0;
 
     uint8_t airconOperatingModeRaw_ = 0;   // 0 off,4 vent,5 cool,6 hot,7 auto
     uint8_t airconVentModeRaw_ = 114;      // 113 low,114 mid,115 high,116 night,119 auto
@@ -84,15 +74,12 @@ private:
     // publish-pending flags, one per published field, indexed by name below
     struct Flag { bool pending = false; };
     // We keep an explicit small table instead of a map for speed/simplicity.
-    Flag fTargetTempRoom_, fHeatingMode_, fElPowerLevel_, fTargetTempWater_, fEnergyMix_,
-        fCurrentTempWater_, fCurrentTempRoom_, fOperatingStatus_, fErrorCode_,
+    Flag fCurrentTempRoom_,
         fAirconOperatingMode_, fAirconVentMode_, fTargetTempAircon_, fClock_, fAlive_;
 
-    int uploadHeater_ = 0;  // mirrors python "upload_buffer" countdown
     int uploadAircon_ = 0;  // mirrors python "upload02_buffer" countdown
     int uploadWait_ = 1;    // mirrors python "upload_wait"
 
-    std::vector<uint8_t> encodeHeaterContent();
     std::vector<uint8_t> encodeAirconContent();
     std::vector<std::vector<uint8_t>> buildTransferFrames(uint8_t headerHi, uint8_t headerLo,
                                                            std::vector<uint8_t> content);

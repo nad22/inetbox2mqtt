@@ -5,7 +5,7 @@
 # Adjust entity ids if you changed the MQTT topic prefix ("truma" by default).
 title: Truma / Aventa
 views:
-  - title: Klima & Heizung
+  - title: Klimaanlage
     path: truma
     icon: mdi:air-conditioner
     cards:
@@ -21,28 +21,8 @@ views:
             name: Firmware
           - entity: sensor.truma_clock
             name: CPplus Uhrzeit
-
-      - type: entities
-        title: Heizung / Warmwasser
-        entities:
           - entity: sensor.truma_current_temp_room
             name: Raumtemperatur
-          - entity: number.truma_target_temp_room
-            name: Raum-Solltemperatur
-          - entity: select.truma_heating_mode
-            name: Lüfterstufe
-          - entity: sensor.truma_current_temp_water
-            name: Wassertemperatur
-          - entity: select.truma_target_temp_water
-            name: Warmwasser-Modus
-          - entity: select.truma_energy_mix
-            name: Energiequelle
-          - entity: select.truma_el_power_level
-            name: El. Leistung
-          - entity: sensor.truma_operating_status
-            name: Betriebsstatus
-          - entity: sensor.truma_error_code
-            name: Fehlercode
 
       - type: button
         entity: button.truma_reboot
