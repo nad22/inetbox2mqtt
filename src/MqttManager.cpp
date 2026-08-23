@@ -19,7 +19,13 @@ void MqttManager::begin(const AppConfig &cfg, TrumaStatus *status) {
 
     client_.setServer(cfg_.mqttHost.c_str(), cfg_.mqttPort);
     client_.setCallback(staticCallback);
-    client_.setBufferSize(1024);
+    // The HA climate discovery payload (topics + Jinja mode templates + the
+    // device block) is comfortably larger than PubSubClient's default 256
+    // byte buffer and can exceed even 1024 bytes once a longer topic root or
+    // device name is configured. If the buffer is too small, publish() just
+    // silently drops the message (returns false) - the entity then never
+    // shows up in Home Assistant with no obvious error. Use a generous size.
+    client_.setBufferSize(2048);
 }
 
 bool MqttManager::isConnected() {
@@ -113,6 +119,9 @@ void MqttManager::publish(bool onlyChanged) {
     status_->collectPublishPairs(pairs, onlyChanged);
     for (auto &kv : pairs) {
         client_.publish((topicStatusPrefix_ + kv.first).c_str(), kv.second.c_str(), true);
+        if (kv.first == "target_temp_aircon" || kv.first == "aircon_vent_mode" || kv.first == "aircon_operating_mode" || kv.first == "current_temp_room") {
+            Serial.printf("[MQTT] publish %s = %s\n", kv.first.c_str(), kv.second.c_str());
+        }
     }
     if (!onlyChanged) {
         client_.publish((topicStatusPrefix_ + "release").c_str(), FW_VERSION, true);
@@ -149,7 +158,11 @@ void MqttManager::publishDiscovery() {
         String payload;
         serializeJson(doc, payload);
         String topic = "homeassistant/" + component + "/" + root + "/" + objectId + "/config";
-        client_.publish(topic.c_str(), payload.c_str(), true);
+        bool ok = client_.publish(topic.c_str(), payload.c_str(), true);
+        if (!ok) {
+            Serial.printf("[MQTT] discovery publish FAILED for %s (payload %u bytes, buffer %u) - entity will be missing in HA\n",
+                          topic.c_str(), (unsigned)payload.length(), (unsigned)client_.getBufferSize());
+        }
     };
 
     // --- alive binary sensor -------------------------------------------------

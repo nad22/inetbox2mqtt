@@ -81,6 +81,16 @@ TrumaStatus::TrumaStatus() {}
 // Incoming buffer decoding
 // -----------------------------------------------------------------------------
 void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint8_t *p, size_t len) {
+    // Temporary diagnostic: log every status buffer the CPplus pushes to us,
+    // so it's possible to check via the serial monitor whether the Aventa
+    // aircon status buffer (0x12,0x35) is actually being received at all,
+    // and with which raw byte values, when current_temp_room / target_temp
+    // stay stuck at 0.
+    {
+        String hex;
+        for (size_t i = 0; i < len; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", p[i]); hex += b; }
+        Serial.printf("[STATUS] buffer %02X,%02X (%u bytes): %s\n", bufIdHi, bufIdLo, (unsigned)len, hex.c_str());
+    }
     // STATUS_BUFFER_HEADER_RECV_STATUS = 0x14, 0x33 (Combi heater status buffer).
     // Heater/hot-water control was removed; the only value still used from
     // this buffer is the current room temperature, which feeds the Aventa
@@ -93,7 +103,17 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
     if (bufIdHi == 0x12 && bufIdLo == 0x35) {
         airconOperatingModeRaw_ = readLE(p, len, 2, 1); fAirconOperatingMode_.pending = true;
         airconVentModeRaw_      = readLE(p, len, 4, 1); fAirconVentMode_.pending = true;
-        targetTempAirconRaw_    = readLE(p, len, 6, 2); fTargetTempAircon_.pending = true;
+        // The unit itself reports target_raw == 0 whenever it is off (mode
+        // 0) - there simply is no active setpoint while off. Publishing that
+        // 0 verbatim makes the HA climate card's target temperature flash to
+        // 0 deg C every time the mode is off, which looks like a bug. Keep
+        // showing the last known real setpoint instead, like a normal
+        // thermostat does, and only adopt a fresh value once the unit
+        // reports a real (non-zero) one again.
+        uint16_t rawTarget = readLE(p, len, 6, 2);
+        if (rawTarget != 0) { targetTempAirconRaw_ = rawTarget; fTargetTempAircon_.pending = true; }
+        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u\n",
+                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_);
         return;
     }
     // STATUS_BUFFER_HEADER_03 = 0x0A, 0x15 (clock + display)
@@ -120,7 +140,12 @@ bool TrumaStatus::setByTopic(const String &key, const String &value) {
         uint8_t v;
         if (!stringToAirconOperatingMode(value, v)) return false;
         airconOperatingModeRaw_ = v; fAirconOperatingMode_.pending = true; airconField = true;
-        airconOn_ = (v != 0) ? 1 : 0;
+        // NOTE: aircon_on is intentionally left untouched here. In the
+        // original (working) firmware this field was always constant 1 and
+        // "off" was signalled purely via aircon_operating_mode == 0; deriving
+        // it from the mode (0 when off) made the write frame contain a byte
+        // combination the real Aventa ECU never accepted, so "off" silently
+        // had no effect.
     } else if (key == "aircon_vent_mode") {
         uint8_t v;
         if (!stringToAirconVentMode(value, v)) return false;
