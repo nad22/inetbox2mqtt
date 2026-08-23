@@ -22,9 +22,6 @@ struct AppConfig {
     String mqttTopicRoot = "truma";      // -> service/<root>/...
     String deviceName = "inetbox2mqtt";  // used as MQTT client id / HA device name
 
-    // Web UI / AP fallback
-    String apPassword = "inetbox2mqtt";  // must be >= 8 chars for WPA2
-
     bool haDiscoveryEnabled = true;
 
     // Time (ms) after a successful MQTT (re)connect during which incoming

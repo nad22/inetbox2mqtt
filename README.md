@@ -81,8 +81,8 @@ notes on older CPplus versions).
    ```
 
 4. On first boot (or whenever no Wi-Fi is configured / reachable), the ESP32
-   opens an Access Point named `inetbox2mqtt-XXXXXX`. Connect to it and open
-   `http://192.168.4.1/` in a browser.
+   opens an open (no-password) Access Point named `inetbox2mqtt-XXXXXX`.
+   Connect to it and open `http://192.168.4.1/` in a browser.
 5. Go to **Einrichtung** (Setup), enter your WiFi SSID/password and your MQTT
    broker's host/port (and credentials, if needed). Save - the device
    reboots and joins your network.

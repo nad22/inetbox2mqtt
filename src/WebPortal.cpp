@@ -75,8 +75,11 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
                 return;
             }
             if (doc["wifiSsid"].is<const char *>()) cfg_->wifiSsid = doc["wifiSsid"].as<String>();
-            if (doc["wifiPassword"].is<const char *>() && doc["wifiPassword"].as<String>().length() > 0)
+            cfg_->wifiSsid.trim();
+            if (doc["wifiPassword"].is<const char *>() && doc["wifiPassword"].as<String>().length() > 0) {
                 cfg_->wifiPassword = doc["wifiPassword"].as<String>();
+                cfg_->wifiPassword.trim();
+            }
             if (doc["mqttHost"].is<const char *>()) cfg_->mqttHost = doc["mqttHost"].as<String>();
             if (doc["mqttPort"].is<int>()) cfg_->mqttPort = doc["mqttPort"].as<int>();
             if (doc["mqttUser"].is<const char *>()) cfg_->mqttUser = doc["mqttUser"].as<String>();
@@ -84,8 +87,6 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
                 cfg_->mqttPassword = doc["mqttPassword"].as<String>();
             if (doc["mqttTopicRoot"].is<const char *>()) cfg_->mqttTopicRoot = doc["mqttTopicRoot"].as<String>();
             if (doc["deviceName"].is<const char *>()) cfg_->deviceName = doc["deviceName"].as<String>();
-            if (doc["apPassword"].is<const char *>() && doc["apPassword"].as<String>().length() >= 8)
-                cfg_->apPassword = doc["apPassword"].as<String>();
 
             AppConfigStore::save(*cfg_);
             request->send(200, "application/json", "{\"ok\":true}");

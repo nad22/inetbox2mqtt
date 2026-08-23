@@ -33,6 +33,9 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   .pill { display:inline-block; padding:.1rem .5rem; border-radius:999px; font-size:.75rem; background:#e2e8f0;}
   .pill.on{ background:#c8f4d0; }
   .pill.off{ background:#f4d0d0; }
+  .pwrow { display:flex; gap:.4rem; }
+  .pwrow input { flex:1; }
+  .pwrow button { padding:0 .7rem; border:1px solid #ccc; border-radius:6px; background:#eef1f6; cursor:pointer; font-size:.85rem; }
   #toast { position:fixed; bottom:1rem; left:50%; transform:translateX(-50%); background:#222; color:#fff; padding:.6rem 1rem; border-radius:8px; opacity:0; transition:opacity .3s; font-size:.85rem;}
 </style>
 </head>
@@ -137,9 +140,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     <form class="card" id="cfgForm" onsubmit="return saveConfig(event)">
       <h2>WLAN</h2>
       <label>SSID</label>
-      <input name="wifiSsid" required>
+      <input name="wifiSsid" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" required>
       <label>Passwort</label>
-      <input name="wifiPassword" type="password" placeholder="unverändert lassen = leer">
+      <div class="pwrow">
+        <input name="wifiPassword" id="wifiPassword" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="unverändert lassen = leer">
+        <button type="button" class="togglePw" data-target="wifiPassword">anzeigen</button>
+      </div>
       <h2>MQTT Broker</h2>
       <label>Host / IP</label>
       <input name="mqttHost" required>
@@ -154,8 +160,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <h2>Gerät</h2>
       <label>Gerätename</label>
       <input name="deviceName" value="inetbox2mqtt">
-      <label>Access-Point Passwort (Fallback)</label>
-      <input name="apPassword">
       <button class="action" type="submit">Speichern &amp; neu starten</button>
     </form>
   </section>
@@ -163,6 +167,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <div id="toast"></div>
 <script>
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.opacity=1;setTimeout(()=>t.style.opacity=0,2500);}
+document.querySelectorAll('.togglePw').forEach(btn=>btn.addEventListener('click',()=>{
+  const inp = document.getElementById(btn.dataset.target);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.textContent = show ? 'verbergen' : 'anzeigen';
+}));
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('main section').forEach(x=>x.classList.remove('active'));
@@ -231,8 +241,7 @@ async function saveConfig(ev){
     mqttUser: f.mqttUser.value,
     mqttPassword: f.mqttPassword.value,
     mqttTopicRoot: f.mqttTopicRoot.value,
-    deviceName: f.deviceName.value,
-    apPassword: f.apPassword.value
+    deviceName: f.deviceName.value
   };
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if(r.ok){ toast('Gespeichert, Gerät startet neu ...'); } else { toast('Fehler beim Speichern'); }

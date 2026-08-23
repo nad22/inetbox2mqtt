@@ -15,7 +15,6 @@ AppConfig AppConfigStore::load() {
     cfg.mqttPassword      = prefs.getString("mqtt_pass", "");
     cfg.mqttTopicRoot     = prefs.getString("topic_root", "truma");
     cfg.deviceName        = prefs.getString("dev_name", "inetbox2mqtt");
-    cfg.apPassword        = prefs.getString("ap_pass", "inetbox2mqtt");
     cfg.haDiscoveryEnabled = prefs.getBool("ha_disco", true);
     cfg.mqttBootDiscardMs = prefs.getUInt("boot_discard", 4000);
     prefs.end();
@@ -33,7 +32,6 @@ void AppConfigStore::save(const AppConfig &cfg) {
     prefs.putString("mqtt_pass", cfg.mqttPassword);
     prefs.putString("topic_root", cfg.mqttTopicRoot);
     prefs.putString("dev_name", cfg.deviceName);
-    prefs.putString("ap_pass", cfg.apPassword);
     prefs.putBool("ha_disco", cfg.haDiscoveryEnabled);
     prefs.putUInt("boot_discard", cfg.mqttBootDiscardMs);
     prefs.end();

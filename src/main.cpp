@@ -35,19 +35,45 @@ static void setLed(int pin, bool on) {
     digitalWrite(pin, on ? HIGH : LOW);
 }
 
+// Logs the low-level disconnect reason from the WiFi driver. This is far
+// more informative than WiFi.status() alone - in particular a wrong
+// password usually shows up here as AUTH_EXPIRE(2)/AUTH_FAIL(202) or
+// 4WAY_HANDSHAKE_TIMEOUT(15), while an unreachable/too-weak AP shows up as
+// NO_AP_FOUND(201) or BEACON_TIMEOUT(200).
+static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+        Serial.printf("[WiFi] disconnected, reason=%d (2/202=auth/password rejected, "
+                      "15/204=handshake timeout - often also a wrong password, "
+                      "200=beacon timeout - AP out of range/wrong band, 201=SSID not found)\n",
+                      (int)info.wifi_sta_disconnected.reason);
+    }
+}
+
 // Tries to join the configured WiFi network for a bounded time. If that
 // fails (or nothing is configured yet) an Access Point is started so the
 // device can still be reached and configured via the web UI.
 static void connectWifi() {
     WiFi.mode(WIFI_AP_STA);
+    WiFi.persistent(false);  // don't let the WiFi driver's own NVS blob fight with our AppConfig
+    WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);  // avoid modem-sleep related connection hiccups
+    WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
     if (g_config.isWifiConfigured()) {
-        Serial.printf("[WiFi] connecting to '%s' ...\n", g_config.wifiSsid.c_str());
+        Serial.printf("[WiFi] connecting to '%s' (password length=%u) ...\n",
+                      g_config.wifiSsid.c_str(), g_config.wifiPassword.length());
+        WiFi.disconnect(true, false);
+        delay(100);
         WiFi.begin(g_config.wifiSsid.c_str(), g_config.wifiPassword.c_str());
         uint32_t start = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
             delay(250);
             setLed(PIN_LED_WIFI, (millis() / 250) % 2 == 0);
+        }
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.printf("[WiFi] connect failed, status=%d (see WiFiType.h wl_status_t; "
+                          "3=connected, 4=wrong password, 1/6=no such network)\n",
+                          (int)WiFi.status());
         }
     }
 
@@ -57,8 +83,8 @@ static void connectWifi() {
         setLed(PIN_LED_WIFI, true);
     } else {
         String apName = "inetbox2mqtt-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-        Serial.printf("[WiFi] starting fallback AP '%s'\n", apName.c_str());
-        WiFi.softAP(apName.c_str(), g_config.apPassword.c_str());
+        Serial.printf("[WiFi] starting fallback AP '%s' (open, no password)\n", apName.c_str());
+        WiFi.softAP(apName.c_str());
         Serial.printf("[WiFi] AP IP=%s - open http://%s to configure\n",
                       WiFi.softAPIP().toString().c_str(), WiFi.softAPIP().toString().c_str());
     }
