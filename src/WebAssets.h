@@ -127,8 +127,54 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <input name="deviceName" value="inetbox2mqtt">
       <label>OTA Manifest-URL</label>
       <input name="otaManifestUrl" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <label>Zeitzone (POSIX TZ, für Uhrzeit-Sync via NTP)</label>
-      <input name="ntpTimezone" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="CET-1CEST,M3.5.0,M10.5.0/3">
+      <label>Zeitzone (für Uhrzeit-Sync via NTP)</label>
+      <select name="ntpTimezoneSelect" id="ntpTimezoneSelect" onchange="onTimezoneSelectChange()">
+        <optgroup label="Mitteleuropa (MEZ/MESZ)">
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Deutschland</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Österreich</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Schweiz</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Niederlande</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Belgien</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Luxemburg</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Frankreich</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Italien</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Spanien</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Dänemark</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Norwegen</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Schweden</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Polen</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Tschechien</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Slowakei</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Ungarn</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Kroatien</option>
+          <option value="CET-1CEST,M3.5.0,M10.5.0/3">Slowenien</option>
+        </optgroup>
+        <optgroup label="Westeuropa (GMT/BST)">
+          <option value="GMT0BST,M3.5.0/1,M10.5.0">Vereinigtes Königreich</option>
+          <option value="GMT0BST,M3.5.0/1,M10.5.0">Irland</option>
+          <option value="WET0WEST,M3.5.0/1,M10.5.0">Portugal</option>
+        </optgroup>
+        <optgroup label="Osteuropa (EET/EEST)">
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Finnland</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Griechenland</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Rumänien</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Bulgarien</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Estland</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Lettland</option>
+          <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Litauen</option>
+        </optgroup>
+        <optgroup label="Sonstige">
+          <option value="<+03>-3">Türkei</option>
+          <option value="MSK-3">Russland (Moskau)</option>
+          <option value="EST5EDT,M3.2.0,M11.1.0">USA (Ost, New York)</option>
+          <option value="CST6CDT,M3.2.0,M11.1.0">USA (Zentral, Chicago)</option>
+          <option value="MST7MDT,M3.2.0,M11.1.0">USA (Berg, Denver)</option>
+          <option value="PST8PDT,M3.2.0,M11.1.0">USA (Pazifik, Los Angeles)</option>
+          <option value="UTC0">UTC</option>
+        </optgroup>
+        <option value="custom">Benutzerdefiniert (POSIX TZ) ...</option>
+      </select>
+      <input name="ntpTimezone" id="ntpTimezoneCustom" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="CET-1CEST,M3.5.0,M10.5.0/3" style="display:none;margin-top:.4rem">
       <button class="action" type="submit">Speichern &amp; neu starten</button>
     </form>
 
@@ -212,12 +258,26 @@ async function reboot(){
   toast('Neustart ...');
 }
 
+function onTimezoneSelectChange(){
+  const sel = document.getElementById('ntpTimezoneSelect');
+  const custom = document.getElementById('ntpTimezoneCustom');
+  const isCustom = sel.value === 'custom';
+  custom.style.display = isCustom ? 'block' : 'none';
+  if(!isCustom) custom.value = sel.value;
+}
+
 async function loadConfig(){
   const r = await fetch('/api/config'); const d = await r.json();
   const f = document.getElementById('cfgForm');
-  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName','otaManifestUrl','ntpTimezone']){
+  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName','otaManifestUrl']){
     if(f[k]) f[k].value = d[k] ?? '';
   }
+  const tz = d.ntpTimezone ?? '';
+  const sel = document.getElementById('ntpTimezoneSelect');
+  const matched = Array.from(sel.options).some(o => o.value === tz);
+  sel.value = matched ? tz : 'custom';
+  document.getElementById('ntpTimezoneCustom').value = tz;
+  onTimezoneSelectChange();
   document.getElementById('ota_current').textContent = d.fwVersion ?? '-';
 }
 loadConfig();
@@ -235,7 +295,7 @@ async function saveConfig(ev){
     mqttTopicRoot: f.mqttTopicRoot.value,
     deviceName: f.deviceName.value,
     otaManifestUrl: f.otaManifestUrl.value,
-    ntpTimezone: f.ntpTimezone.value
+    ntpTimezone: document.getElementById('ntpTimezoneCustom').value
   };
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if(r.ok){ toast('Gespeichert, Gerät startet neu ...'); } else { toast('Fehler beim Speichern'); }
@@ -342,14 +402,35 @@ function otaPhaseLabel(phase){
   }
 }
 let otaPollTimer = null;
+let otaSawActivity = false;
+let otaSawActivityFailCount = 0;
 function otaPollStatus(){
   if(otaPollTimer) return;
+  otaSawActivity = false;
+  otaSawActivityFailCount = 0;
   otaPollTimer = setInterval(async () => {
     try{
       const r = await fetch('/api/ota/status', {cache:'no-store'});
       const d = await r.json();
       const box = document.getElementById('ota_progress');
       box.classList.add('active');
+      otaSawActivityFailCount = 0;
+
+      // The device reboots itself very shortly after the install finishes
+      // (see main.cpp), which can win the race against this 1s poll: the
+      // browser never gets to see phase "success" and, once the device is
+      // back up, /api/ota/status simply answers "idle" again (fresh boot
+      // resets progress). Treat that as an implicit success instead of
+      // getting stuck showing "Bereit" forever.
+      if(d.phase === 'downloading' || d.phase === 'installing') otaSawActivity = true;
+      if(d.phase === 'idle' && otaSawActivity){
+        clearInterval(otaPollTimer); otaPollTimer = null;
+        box.classList.remove('error'); box.classList.add('ok');
+        document.getElementById('ota_progress_text').textContent = 'Update vermutlich installiert (Gerät neu gestartet), Gerät wird geprüft ...';
+        otaWaitForReboot();
+        return;
+      }
+
       let text = otaPhaseLabel(d.phase);
       if(d.phase === 'downloading' && d.bytesTotal > 0){
         const pct = Math.round(d.bytesDone * 100 / d.bytesTotal);
@@ -369,7 +450,23 @@ function otaPollStatus(){
         document.getElementById('ota_install_btn').disabled = !otaLatestUrl;
         document.getElementById('ota_upload_btn').disabled = false;
       }
-    }catch(e){ /* device momentarily unreachable while flashing, keep polling */ }
+    }catch(e){
+      // Device momentarily unreachable while flashing/rebooting. If we'd
+      // already seen real progress, a stretch of failed polls also means
+      // the reboot is very likely underway - fall back to the same
+      // "wait for it to come back" flow instead of polling /api/ota/status
+      // forever against an unreachable device.
+      if(otaSawActivity){
+        otaSawActivityFailCount += 1;
+        if(otaSawActivityFailCount >= 3){
+          clearInterval(otaPollTimer); otaPollTimer = null;
+          const box = document.getElementById('ota_progress');
+          box.classList.remove('error'); box.classList.add('ok');
+          document.getElementById('ota_progress_text').textContent = 'Verbindung getrennt, Gerät startet vermutlich neu ...';
+          otaWaitForReboot();
+        }
+      }
+    }
   }, 1000);
 }
 

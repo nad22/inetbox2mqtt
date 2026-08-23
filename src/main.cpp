@@ -196,9 +196,17 @@ void loop() {
         g_mqtt.publish(true);
     }
 
-    if (g_web.consumeRebootRequest() || OtaManager::consumeRebootRequest()) {
+    bool webReboot = g_web.consumeRebootRequest();
+    bool otaReboot = OtaManager::consumeRebootRequest();
+    if (webReboot || otaReboot) {
         Serial.println("[main] reboot requested (web UI / OTA update)");
-        delay(300);
+        // OTA gets a longer grace period so the web UI has time to poll
+        // /api/ota/status and actually render the "success" phase before
+        // the device disappears - otherwise the browser can be left
+        // showing a stale "Bereit" state after the reboot resets progress
+        // back to Idle (observed on real hardware: update installed fine,
+        // page just never caught the success frame in the ~1s poll window).
+        delay(otaReboot ? 3000 : 300);
         ESP.restart();
     }
 }

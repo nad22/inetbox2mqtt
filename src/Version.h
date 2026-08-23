@@ -2,5 +2,5 @@
 
 // Firmware version of the C++ / PlatformIO rewrite (independent from the
 // legacy MicroPython release numbering).
-#define FW_VERSION "3.4.0"
+#define FW_VERSION "3.5.0"
 #define FW_MODEL "inetbox2mqtt-cpp"
