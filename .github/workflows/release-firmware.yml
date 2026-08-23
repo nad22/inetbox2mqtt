@@ -1,16 +1,25 @@
 name: Release firmware
 
 # Builds the PlatformIO firmware image and publishes it as a versioned GitHub
-# Release whenever a "vX.Y.Z" tag is pushed. Also (re)generates
-# firmware/manifest.json and commits it back to the default branch so that
-# devices in the field can discover the latest release via
-# GET /api/ota/check (see src/OtaManager.cpp / AppConfig.otaManifestUrl).
+# Release whenever a "vX.Y.Z" tag is pushed. The compiled firmware.bin needs
+# to be reachable by a plain HTTPS GET from the device (see
+# src/OtaManager.cpp / AppConfig.otaManifestUrl), but must NOT bloat the
+# repo's normal git history with a new binary blob on every release. To get
+# both, firmware.bin is pushed to a dedicated `firmware-bin` branch that is
+# force-pushed as a fresh orphan commit each time (always exactly one commit,
+# so the branch never grows) - it is attached to the GitHub Release too, for
+# human-facing download/archival. Only the small firmware/manifest.json is
+# committed normally to the default branch, pointing at the raw firmware-bin
+# branch URL, so devices can discover the latest version via GET
+# /api/ota/check.
 #
 # To ship a release:
 #   1. Bump FW_VERSION in src/Version.h to match the new tag (e.g. "3.1.0").
 #   2. Commit, then: git tag v3.1.0 && git push origin v3.1.0
 #   3. This workflow builds firmware.bin, creates a GitHub Release "v3.1.0"
-#      with firmware.bin attached, and commits the updated manifest.json.
+#      with firmware.bin attached, force-pushes firmware.bin to the
+#      `firmware-bin` branch (single commit, no history growth), and commits
+#      the updated manifest.json to the default branch.
 
 on:
   push:
@@ -49,37 +58,51 @@ jobs:
 
       - name: Stage release artifact
         run: |
-          mkdir -p firmware
-          cp .pio/build/esp32dev/firmware.bin firmware/firmware.bin
+          mkdir -p /tmp/out
+          cp .pio/build/esp32dev/firmware.bin /tmp/out/firmware.bin
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
-          files: firmware/firmware.bin
+          files: /tmp/out/firmware.bin
           generate_release_notes: true
 
       - name: Write manifest.json
         run: |
-          mkdir -p /tmp/manifest
-          cat > /tmp/manifest/manifest.json <<EOF
+          cat > /tmp/out/manifest.json <<EOF
           {
             "version": "${{ steps.ver.outputs.version }}",
-            "url": "https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/firmware.bin"
+            "url": "https://raw.githubusercontent.com/${{ github.repository }}/firmware-bin/firmware.bin"
           }
           EOF
-          cat /tmp/manifest/manifest.json
+          cat /tmp/out/manifest.json
+
+      - name: Publish firmware.bin to orphan firmware-bin branch (no history growth)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Fresh orphan branch each run: only ever one commit, so this never
+          # accumulates git history/blob bloat no matter how many releases ship.
+          git checkout --orphan firmware-bin
+          git rm -rf . > /dev/null
+          cp /tmp/out/firmware.bin firmware.bin
+          git add firmware.bin
+          git commit -m "firmware ${{ steps.ver.outputs.tag }}"
+          git push --force origin HEAD:firmware-bin
 
       - name: Commit manifest.json to default branch
         run: |
-          # actions/checkout leaves us in a detached HEAD at the tag; the
-          # manifest must be committed to the default branch instead, so
-          # switch to it before writing/committing the file.
+          # Switch back to the default branch to commit the small manifest
+          # (this one keeps normal history - it's tiny plain text, useful to
+          # see version bumps over time). The manifest was staged under /tmp
+          # (outside the working tree) so this checkout has nothing untracked
+          # to conflict with.
           git fetch origin "${{ github.event.repository.default_branch }}"
           git checkout "${{ github.event.repository.default_branch }}"
           mkdir -p firmware
-          cp /tmp/manifest/manifest.json firmware/manifest.json
+          cp /tmp/out/manifest.json firmware/manifest.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add firmware/manifest.json

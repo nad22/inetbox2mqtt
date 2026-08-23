@@ -9,3 +9,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Compiled firmware images are published to the orphan "firmware-bin" branch
+# and as GitHub Release assets (see .github/workflows/release-firmware.yml),
+# never committed into this branch's git history.
+firmware/*.bin

@@ -188,9 +188,12 @@ connection, in three ways (all from the **Einrichtung** tab of the web UI):
    (tag must match `v<major>.<minor>.<patch>`).
 3. [`.github/workflows/release-firmware.yml`](.github/workflows/release-firmware.yml)
    builds the firmware with PlatformIO, publishes a GitHub Release with
-   `firmware.bin` attached, and commits the updated
-   [`firmware/manifest.json`](firmware/manifest.json) back to `main` so
-   devices in the field pick it up on their next "Nach Update suchen".
+   `firmware.bin` attached, force-pushes that same `firmware.bin` to the
+   dedicated `firmware-bin` branch (a single, always-overwritten commit, so
+   the binary never bloats the normal git history), and commits the updated
+   [`firmware/manifest.json`](firmware/manifest.json) - which points at that
+   branch - back to `main` so devices in the field pick it up on their next
+   "Nach Update suchen".
 
 ### Security note
 
