@@ -24,6 +24,11 @@ struct AppConfig {
 
     bool haDiscoveryEnabled = true;
 
+    // Manifest used by the built-in OTA updater (see src/OtaManager.h and
+    // .github/workflows/release-firmware.yml). Point this at your own fork's
+    // manifest.json if you maintain one.
+    String otaManifestUrl = "https://raw.githubusercontent.com/nad22/inetbox2mqtt/main/firmware/manifest.json";
+
     // Time (ms) after a successful MQTT (re)connect during which incoming
     // command messages are discarded. This prevents stale/queued broker
     // messages from unintentionally driving the aircon right after boot.

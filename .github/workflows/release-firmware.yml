@@ -1,0 +1,91 @@
+name: Release firmware
+
+# Builds the PlatformIO firmware image and publishes it as a versioned GitHub
+# Release whenever a "vX.Y.Z" tag is pushed. Also (re)generates
+# firmware/manifest.json and commits it back to the default branch so that
+# devices in the field can discover the latest release via
+# GET /api/ota/check (see src/OtaManager.cpp / AppConfig.otaManifestUrl).
+#
+# To ship a release:
+#   1. Bump FW_VERSION in src/Version.h to match the new tag (e.g. "3.1.0").
+#   2. Commit, then: git tag v3.1.0 && git push origin v3.1.0
+#   3. This workflow builds firmware.bin, creates a GitHub Release "v3.1.0"
+#      with firmware.bin attached, and commits the updated manifest.json.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Build firmware (esp32dev)
+        run: pio run -e esp32dev
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage release artifact
+        run: |
+          mkdir -p firmware
+          cp .pio/build/esp32dev/firmware.bin firmware/firmware.bin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: firmware/firmware.bin
+          generate_release_notes: true
+
+      - name: Write manifest.json
+        run: |
+          mkdir -p /tmp/manifest
+          cat > /tmp/manifest/manifest.json <<EOF
+          {
+            "version": "${{ steps.ver.outputs.version }}",
+            "url": "https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/firmware.bin"
+          }
+          EOF
+          cat /tmp/manifest/manifest.json
+
+      - name: Commit manifest.json to default branch
+        run: |
+          # actions/checkout leaves us in a detached HEAD at the tag; the
+          # manifest must be committed to the default branch instead, so
+          # switch to it before writing/committing the file.
+          git fetch origin "${{ github.event.repository.default_branch }}"
+          git checkout "${{ github.event.repository.default_branch }}"
+          mkdir -p firmware
+          cp /tmp/manifest/manifest.json firmware/manifest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add firmware/manifest.json
+          if git diff --cached --quiet; then
+            echo "manifest.json unchanged, nothing to commit"
+          else
+            git commit -m "chore: update firmware manifest to ${{ steps.ver.outputs.tag }} [skip ci]"
+            git push origin "HEAD:${{ github.event.repository.default_branch }}"
+          fi

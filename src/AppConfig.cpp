@@ -16,6 +16,7 @@ AppConfig AppConfigStore::load() {
     cfg.mqttTopicRoot     = prefs.getString("topic_root", "truma");
     cfg.deviceName        = prefs.getString("dev_name", "inetbox2mqtt");
     cfg.haDiscoveryEnabled = prefs.getBool("ha_disco", true);
+    cfg.otaManifestUrl    = prefs.getString("ota_url", cfg.otaManifestUrl);
     cfg.mqttBootDiscardMs = prefs.getUInt("boot_discard", 4000);
     prefs.end();
     return cfg;
@@ -33,6 +34,7 @@ void AppConfigStore::save(const AppConfig &cfg) {
     prefs.putString("topic_root", cfg.mqttTopicRoot);
     prefs.putString("dev_name", cfg.deviceName);
     prefs.putBool("ha_disco", cfg.haDiscoveryEnabled);
+    prefs.putString("ota_url", cfg.otaManifestUrl);
     prefs.putUInt("boot_discard", cfg.mqttBootDiscardMs);
     prefs.end();
 }

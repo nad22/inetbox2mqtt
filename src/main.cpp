@@ -17,6 +17,7 @@
 #include "LinBus.h"
 #include "MqttManager.h"
 #include "WebPortal.h"
+#include "CommandLog.h"
 #include "Version.h"
 
 static AppConfig g_config;
@@ -94,6 +95,7 @@ void setup() {
     Serial.begin(115200);
     delay(300);
     Serial.printf("\ninetbox2mqtt %s starting...\n", FW_VERSION);
+    CommandLog::add("system", "info", String("Firmware gestartet, Version ") + FW_VERSION);
 
     if (PIN_LED_WIFI >= 0) pinMode(PIN_LED_WIFI, OUTPUT);
     if (PIN_LED_MQTT >= 0) pinMode(PIN_LED_MQTT, OUTPUT);

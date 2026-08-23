@@ -48,6 +48,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   <button data-tab="status" class="active">Status</button>
   <button data-tab="control">Steuerung</button>
   <button data-tab="setup">Einrichtung</button>
+  <button data-tab="log">Log</button>
 </nav>
 <main>
   <section id="status" class="active">
@@ -160,8 +161,31 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <h2>Gerät</h2>
       <label>Gerätename</label>
       <input name="deviceName" value="inetbox2mqtt">
+      <label>OTA Manifest-URL</label>
+      <input name="otaManifestUrl" autocapitalize="off" autocorrect="off" spellcheck="false">
       <button class="action" type="submit">Speichern &amp; neu starten</button>
     </form>
+
+    <div class="card">
+      <h2>Firmware / OTA-Update</h2>
+      <div class="row"><span>Aktuelle Version</span><span id="ota_current">-</span></div>
+      <div class="row"><span>Verfügbare Version</span><span id="ota_latest">-</span></div>
+      <button class="action secondary" type="button" onclick="otaCheck()">Nach Update suchen</button>
+      <button class="action" type="button" id="ota_install_btn" onclick="otaInstall()" disabled>Update installieren</button>
+
+      <h2 style="margin-top:1.2rem">Manuelles Update</h2>
+      <label>Firmware-Datei (.bin)</label>
+      <input type="file" id="ota_file" accept=".bin">
+      <button class="action" type="button" onclick="otaUpload()">Hochladen &amp; installieren</button>
+    </div>
+  </section>
+
+  <section id="log">
+    <div class="card">
+      <h2>Ereignis-Log</h2>
+      <p style="font-size:.8rem;color:#666;margin-top:0">Letzte Befehle/Ereignisse inkl. Quelle. "mqtt" bedeutet nur, dass die Nachricht über den MQTT-Broker ankam - MQTT selbst übermittelt keine Absender-Kennung. "web" = über dieses Webinterface, "ota" = Firmware-Update, "system" = Gerät selbst.</p>
+      <div id="log_entries"><i>lädt ...</i></div>
+    </div>
   </section>
 </main>
 <div id="toast"></div>
@@ -224,9 +248,10 @@ async function reboot(){
 async function loadConfig(){
   const r = await fetch('/api/config'); const d = await r.json();
   const f = document.getElementById('cfgForm');
-  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName']){
+  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName','otaManifestUrl']){
     if(f[k]) f[k].value = d[k] ?? '';
   }
+  document.getElementById('ota_current').textContent = d.fwVersion ?? '-';
 }
 loadConfig();
 
@@ -241,12 +266,62 @@ async function saveConfig(ev){
     mqttUser: f.mqttUser.value,
     mqttPassword: f.mqttPassword.value,
     mqttTopicRoot: f.mqttTopicRoot.value,
-    deviceName: f.deviceName.value
+    deviceName: f.deviceName.value,
+    otaManifestUrl: f.otaManifestUrl.value
   };
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if(r.ok){ toast('Gespeichert, Gerät startet neu ...'); } else { toast('Fehler beim Speichern'); }
   return false;
 }
+
+let otaLatestUrl = '';
+async function otaCheck(){
+  document.getElementById('ota_latest').textContent = 'suche ...';
+  try{
+    const r = await fetch('/api/ota/check'); const d = await r.json();
+    document.getElementById('ota_current').textContent = d.currentVersion ?? '-';
+    if(!d.ok){ toast('Fehler: '+d.error); document.getElementById('ota_latest').textContent = '-'; return; }
+    document.getElementById('ota_latest').textContent = d.latestVersion + (d.updateAvailable ? ' (neu)' : ' (aktuell)');
+    otaLatestUrl = d.downloadUrl;
+    document.getElementById('ota_install_btn').disabled = !d.updateAvailable;
+  }catch(e){ toast('Prüfung fehlgeschlagen'); document.getElementById('ota_latest').textContent = '-'; }
+}
+async function otaInstall(){
+  if(!otaLatestUrl) return;
+  if(!confirm('Update jetzt installieren? Das Gerät startet danach neu.')) return;
+  toast('Installiere Update ...');
+  try{
+    const r = await fetch('/api/ota/install', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: otaLatestUrl})});
+    const d = await r.json();
+    if(d.ok){ toast('Update erfolgreich, Neustart ...'); } else { toast('Update fehlgeschlagen: '+d.error); }
+  }catch(e){ toast('Verbindung getrennt - Gerät startet vermutlich neu'); }
+}
+async function otaUpload(){
+  const f = document.getElementById('ota_file').files[0];
+  if(!f){ toast('Bitte Datei auswählen'); return; }
+  if(!confirm('Firmware '+f.name+' hochladen und installieren?')) return;
+  const form = new FormData();
+  form.append('firmware', f, f.name);
+  toast('Lade hoch ...');
+  try{
+    const r = await fetch('/api/ota/upload', {method:'POST', body: form});
+    const d = await r.json();
+    if(d.ok){ toast('Upload ok, Neustart ...'); } else { toast('Upload fehlgeschlagen'); }
+  }catch(e){ toast('Verbindung getrennt - Gerät startet vermutlich neu'); }
+}
+
+async function refreshLog(){
+  try{
+    const r = await fetch('/api/log'); const d = await r.json();
+    let html = '';
+    for(const e of d.entries.slice().reverse()){
+      html += '<div class="row"><span>['+e.age+'s] <b>'+e.source+'</b>/'+e.status+'</span><span>'+e.message+'</span></div>';
+    }
+    document.getElementById('log_entries').innerHTML = html || '<i>keine Einträge</i>';
+  }catch(e){/* ignore */}
+}
+setInterval(refreshLog, 3000);
+refreshLog();
 </script>
 </body>
 </html>

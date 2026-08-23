@@ -32,4 +32,6 @@ private:
 
     void handleGetStatus(AsyncWebServerRequest *request);
     void handleGetConfig(AsyncWebServerRequest *request);
+    void handleGetLog(AsyncWebServerRequest *request);
+    void handleOtaCheck(AsyncWebServerRequest *request);
 };

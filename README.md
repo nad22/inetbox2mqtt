@@ -175,6 +175,46 @@ See [homeassistant/README.md](homeassistant/README.md) for the full list of
 auto-discovered entities and an example dashboard
 ([homeassistant/dashboard.yaml](homeassistant/dashboard.yaml)).
 
+## Firmware updates (OTA)
+
+The device can update its own firmware over the air, without a USB/serial
+connection, in three ways (all from the **Einrichtung** tab of the web UI):
+
+- **Check & install from the repo** - "Nach Update suchen" fetches a small
+  `manifest.json` (URL configurable as *OTA Manifest-URL*, defaults to this
+  repo's `main` branch) describing the latest released version and a
+  download URL. If it's newer than the running firmware, "Update
+  installieren" downloads and flashes it, then reboots.
+- **Manual upload** - pick a `firmware.bin` file (e.g. one built locally with
+  `pio run -e esp32dev`, found under `.pio/build/esp32dev/firmware.bin`, or
+  downloaded from a GitHub Release) and click "Hochladen & installieren" to
+  flash it directly, without going through the manifest at all.
+- **Event log** - the *Log* tab shows recent commands/events (MQTT, web UI,
+  OTA, system boot) so you can confirm an update was applied, or see why a
+  command was rejected/discarded. Note that MQTT itself doesn't tell a
+  subscriber who published a message - "mqtt" as a source only means the
+  command arrived via the broker, not which client sent it.
+
+### Releasing a new version
+
+1. Bump `FW_VERSION` in [`src/Version.h`](src/Version.h).
+2. Commit, then tag and push: `git tag v3.1.0 && git push origin v3.1.0`
+   (tag must match `v<major>.<minor>.<patch>`).
+3. [`.github/workflows/release-firmware.yml`](.github/workflows/release-firmware.yml)
+   builds the firmware with PlatformIO, publishes a GitHub Release with
+   `firmware.bin` attached, and commits the updated
+   [`firmware/manifest.json`](firmware/manifest.json) back to `main` so
+   devices in the field pick it up on their next "Nach Update suchen".
+
+### Security note
+
+OTA downloads use HTTPS but **do not validate the server's TLS certificate**
+(`WiFiClientSecure::setInsecure()`), to avoid maintaining a pinned root CA
+that would need updating as certificates rotate. This protects against
+passive eavesdropping but not against an active man-in-the-middle on the
+network path to GitHub. If you need stronger guarantees, use the manual
+upload flow over a trusted local network instead of the repo-based check.
+
 ## Disclaimer
 
 This project simulates a TRUMA inetbox on the LIN bus. It only works with a

@@ -1,5 +1,6 @@
 #include "MqttManager.h"
 #include "Version.h"
+#include "CommandLog.h"
 #include <ArduinoJson.h>
 
 static MqttManager *g_instance = nullptr;
@@ -72,6 +73,7 @@ void MqttManager::handleMessage(char *topicC, uint8_t *payload, unsigned int len
     // aircon after a reboot or reconnect.
     if (millis() - connectedAtMs_ < cfg_.mqttBootDiscardMs) {
         Serial.printf("[MQTT] discarding boot-queued message %s = %s\n", topic.c_str(), value.c_str());
+        CommandLog::add("mqtt", "discarded", topic + " = " + value);
         return;
     }
 
@@ -86,6 +88,7 @@ void MqttManager::handleMessage(char *topicC, uint8_t *payload, unsigned int len
     if (key == "reboot") {
         if (value == "1") {
             Serial.println("[MQTT] reboot requested");
+            CommandLog::add("mqtt", "applied", "reboot");
             delay(200);
             ESP.restart();
         }
@@ -93,9 +96,14 @@ void MqttManager::handleMessage(char *topicC, uint8_t *payload, unsigned int len
     }
 
     if (status_->isSettable(key)) {
-        if (!status_->setByTopic(key, value)) {
+        if (status_->setByTopic(key, value)) {
+            CommandLog::add("mqtt", "applied", key + " = " + value);
+        } else {
             Serial.printf("[MQTT] rejected invalid value for %s: %s\n", key.c_str(), value.c_str());
+            CommandLog::add("mqtt", "rejected", key + " = " + value);
         }
+    } else {
+        CommandLog::add("mqtt", "rejected", "unbekannter Schlüssel " + key);
     }
 }
 
