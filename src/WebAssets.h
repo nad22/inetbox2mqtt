@@ -37,6 +37,13 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   .pwrow input { flex:1; }
   .pwrow button { padding:0 .7rem; border:1px solid #ccc; border-radius:6px; background:#eef1f6; cursor:pointer; font-size:.85rem; }
   #toast { position:fixed; bottom:1rem; left:50%; transform:translateX(-50%); background:#222; color:#fff; padding:.6rem 1rem; border-radius:8px; opacity:0; transition:opacity .3s; font-size:.85rem;}
+  .progress { display:none; align-items:center; gap:.6rem; margin-top:1rem; padding:.6rem .8rem; border-radius:8px; background:#eef1f6; font-size:.85rem; }
+  .progress.active { display:flex; }
+  .progress .spinner { width:16px; height:16px; border-radius:50%; border:3px solid #c7d2e0; border-top-color:#1d3557; animation:spin .8s linear infinite; flex:none; }
+  .progress.error .spinner { display:none; }
+  .progress.error { background:#f8d7da; }
+  .progress.ok { background:#d4edda; }
+  @keyframes spin { to { transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -132,7 +139,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <h2 style="margin-top:1.2rem">Manuelles Update</h2>
       <label>Firmware-Datei (.bin)</label>
       <input type="file" id="ota_file" accept=".bin">
-      <button class="action" type="button" onclick="otaUpload()">Hochladen &amp; installieren</button>
+      <button class="action" type="button" id="ota_upload_btn" onclick="otaUpload()">Hochladen &amp; installieren</button>
+
+      <div class="progress" id="ota_progress">
+        <div class="spinner"></div>
+        <span id="ota_progress_text">-</span>
+      </div>
     </div>
   </section>
 
@@ -235,15 +247,70 @@ async function otaCheck(){
     document.getElementById('ota_install_btn').disabled = !d.updateAvailable;
   }catch(e){ toast('Prüfung fehlgeschlagen'); document.getElementById('ota_latest').textContent = '-'; }
 }
+
+let otaProgressTimer = null;
+let otaProgressStart = 0;
+function otaProgressBegin(label){
+  document.getElementById('ota_install_btn').disabled = true;
+  document.getElementById('ota_upload_btn').disabled = true;
+  const box = document.getElementById('ota_progress');
+  box.classList.remove('error','ok');
+  box.classList.add('active');
+  otaProgressStart = Date.now();
+  const setText = () => {
+    const secs = Math.round((Date.now() - otaProgressStart) / 1000);
+    document.getElementById('ota_progress_text').textContent = label + ' (' + secs + 's) - Seite bitte offen lassen';
+  };
+  setText();
+  otaProgressTimer = setInterval(setText, 1000);
+}
+function otaProgressEnd(kind, text){
+  if(otaProgressTimer){ clearInterval(otaProgressTimer); otaProgressTimer = null; }
+  const box = document.getElementById('ota_progress');
+  box.classList.remove('error','ok');
+  if(kind) box.classList.add(kind);
+  document.getElementById('ota_progress_text').textContent = text;
+  document.getElementById('ota_upload_btn').disabled = false;
+  document.getElementById('ota_install_btn').disabled = !otaLatestUrl;
+  if(kind !== 'ok') setTimeout(() => box.classList.remove('active'), 8000);
+}
+// Polls the device until it answers again after a reboot (WiFi + web server
+// need a few seconds to come back up), then reloads the page.
+async function otaWaitForReboot(){
+  const box = document.getElementById('ota_progress');
+  box.classList.remove('error'); box.classList.add('active','ok');
+  let waited = 0;
+  const maxWaitS = 60;
+  const tick = async () => {
+    waited += 2;
+    document.getElementById('ota_progress_text').textContent =
+      'Gerät startet neu ... (' + waited + 's)';
+    try{
+      const r = await fetch('/api/status', {cache:'no-store'});
+      if(r.ok){
+        document.getElementById('ota_progress_text').textContent = 'Update installiert, Gerät ist wieder online. Seite wird neu geladen ...';
+        setTimeout(() => location.reload(), 1200);
+        return;
+      }
+    }catch(e){ /* still rebooting/reconnecting, keep waiting */ }
+    if(waited >= maxWaitS){
+      document.getElementById('ota_progress_text').textContent = 'Gerät antwortet nach ' + waited + 's nicht - bitte Seite manuell neu laden.';
+      return;
+    }
+    setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 2000);
+}
 async function otaInstall(){
   if(!otaLatestUrl) return;
   if(!confirm('Update jetzt installieren? Das Gerät startet danach neu.')) return;
-  toast('Installiere Update ...');
+  otaProgressBegin('Installiere Update ...');
   try{
     const r = await fetch('/api/ota/install', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: otaLatestUrl})});
     const d = await r.json();
-    if(d.ok){ toast('Update erfolgreich, Neustart ...'); } else { toast('Update fehlgeschlagen: '+d.error); }
-  }catch(e){ toast('Verbindung getrennt - Gerät startet vermutlich neu'); }
+    if(d.ok){ otaProgressEnd('ok', 'Update erfolgreich installiert.'); otaWaitForReboot(); }
+    else { otaProgressEnd('error', 'Update fehlgeschlagen: '+d.error); }
+  }catch(e){ otaProgressEnd('ok', 'Verbindung getrennt - Gerät startet vermutlich neu.'); otaWaitForReboot(); }
 }
 async function otaUpload(){
   const f = document.getElementById('ota_file').files[0];
@@ -251,12 +318,13 @@ async function otaUpload(){
   if(!confirm('Firmware '+f.name+' hochladen und installieren?')) return;
   const form = new FormData();
   form.append('firmware', f, f.name);
-  toast('Lade hoch ...');
+  otaProgressBegin('Lade hoch und installiere ...');
   try{
     const r = await fetch('/api/ota/upload', {method:'POST', body: form});
     const d = await r.json();
-    if(d.ok){ toast('Upload ok, Neustart ...'); } else { toast('Upload fehlgeschlagen'); }
-  }catch(e){ toast('Verbindung getrennt - Gerät startet vermutlich neu'); }
+    if(d.ok){ otaProgressEnd('ok', 'Upload erfolgreich installiert.'); otaWaitForReboot(); }
+    else { otaProgressEnd('error', 'Upload fehlgeschlagen.'); }
+  }catch(e){ otaProgressEnd('ok', 'Verbindung getrennt - Gerät startet vermutlich neu.'); otaWaitForReboot(); }
 }
 
 async function refreshLog(){
