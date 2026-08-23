@@ -29,6 +29,11 @@ struct AppConfig {
     // manifest.json if you maintain one.
     String otaManifestUrl = "https://raw.githubusercontent.com/nad22/inetbox2mqtt/main/firmware/manifest.json";
 
+    // POSIX TZ string used for the one-time NTP time sync that sets the
+    // CPplus's own clock after boot (see main.cpp). Default is Central
+    // European Time with automatic DST (Germany/Austria/Switzerland).
+    String ntpTimezone = "CET-1CEST,M3.5.0,M10.5.0/3";
+
     // Time (ms) after a successful MQTT (re)connect during which incoming
     // command messages are discarded. This prevents stale/queued broker
     // messages from unintentionally driving the aircon right after boot.

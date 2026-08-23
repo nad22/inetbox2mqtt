@@ -48,6 +48,7 @@ private:
     void reconnect();
     void handleMessage(char *topic, uint8_t *payload, unsigned int length);
     void publishDiscovery();
+    void publishOtaState();
 
     static void staticCallback(char *topic, uint8_t *payload, unsigned int length);
 };

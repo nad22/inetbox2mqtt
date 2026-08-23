@@ -120,7 +120,6 @@ Default topic prefix is `truma` (configurable in the web UI); topics are
 | `alive` | `ON`/`OFF` | LIN/CPplus link active |
 | `clock` | `hh:mm` | CPplus clock |
 | `release` | `x.y.z` | Firmware version |
-| `current_temp_room` | °C | Current room temperature |
 | `aircon_operating_mode` | `off`/`vent`/`cool`/`hot`/`auto` | Aventa operating mode |
 | `aircon_vent_mode` | `low`/`mid`/`high`/`night`/`auto` | Aventa fan mode |
 | `target_temp_aircon` | °C | Aventa target temperature |

@@ -91,14 +91,10 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
         for (size_t i = 0; i < len; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", p[i]); hex += b; }
         Serial.printf("[STATUS] buffer %02X,%02X (%u bytes): %s\n", bufIdHi, bufIdLo, (unsigned)len, hex.c_str());
     }
-    // STATUS_BUFFER_HEADER_RECV_STATUS = 0x14, 0x33 (Combi heater status buffer).
-    // Heater/hot-water control was removed; the only value still used from
-    // this buffer is the current room temperature, which feeds the Aventa
-    // climate entity's "current_temperature".
-    if (bufIdHi == 0x14 && bufIdLo == 0x33) {
-        currentTempRoomRaw_ = readLE(p, len, 16, 2); fCurrentTempRoom_.pending = true;
-        return;
-    }
+    // STATUS_BUFFER_HEADER_RECV_STATUS = 0x14, 0x33 (Combi heater status buffer)
+    // is intentionally ignored entirely - no physical heater unit exists on
+    // this LIN bus, so it never carried anything but placeholder zeros, and
+    // heater/hot-water control was removed.
     // STATUS_BUFFER_HEADER_04 = 0x12, 0x35 (Aventa aircon status)
     if (bufIdHi == 0x12 && bufIdLo == 0x35) {
         airconOperatingModeRaw_ = readLE(p, len, 2, 1); fAirconOperatingMode_.pending = true;
@@ -112,13 +108,25 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
         // reports a real (non-zero) one again.
         uint16_t rawTarget = readLE(p, len, 6, 2);
         if (rawTarget != 0) { targetTempAirconRaw_ = rawTarget; fTargetTempAircon_.pending = true; }
-        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u\n",
-                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_);
+        // Confirmed against github.com/havanti/esphome-truma's StatusFrameAirconManual
+        // struct: this same 18-byte buffer also carries two "actual" temperature
+        // readings - current_temp_aircon (measured at the unit itself, struct
+        // offset 8-9) and current_temp_room (the wall-mounted room sensor,
+        // struct offset 16-17) - no separate heater buffer is needed for these.
+        currentTempAirconRaw_ = readLE(p, len, 10, 2); fCurrentTempAircon_.pending = true;
+        currentTempRoomRaw_ = readLE(p, len, 18, 2); fCurrentTempRoom_.pending = true;
+        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u\n",
+                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_);
         return;
     }
-    // STATUS_BUFFER_HEADER_03 = 0x0A, 0x15 (clock + display)
+    // STATUS_BUFFER_HEADER_03 = 0x0A, 0x15 (clock)
+    // Byte layout (confirmed against github.com/havanti/esphome-truma's
+    // StatusFrameClock, which this project's own legacy source only decoded
+    // partially): hour, minute, second, display_1(=0x1), display_2(=0x1),
+    // display_3, clock_mode(0=24h/1=12h), clock_source, display_4, display_5.
     if (bufIdHi == 0x0A && bufIdLo == 0x15) {
         clockRaw_ = readLE(p, len, 2, 2); fClock_.pending = true;
+        clockModeRaw_ = (uint8_t)readLE(p, len, 8, 1);
         return;
     }
     // STATUS_BUFFER_HEADER_02 (0x02,0x0D, command-counter echo) and the timer
@@ -175,10 +183,11 @@ void TrumaStatus::collectPublishPairs(std::vector<std::pair<String, String>> &ou
 
     push(fAlive_, "alive", alive_ ? "ON" : "OFF");
     push(fClock_, "clock", clockToString(clockRaw_));
-    push(fCurrentTempRoom_, "current_temp_room", String(tempCodeToDecimal(currentTempRoomRaw_), 1));
     push(fAirconOperatingMode_, "aircon_operating_mode", airconOperatingModeToString(airconOperatingModeRaw_));
     push(fAirconVentMode_, "aircon_vent_mode", airconVentModeToString(airconVentModeRaw_));
     push(fTargetTempAircon_, "target_temp_aircon", String(tempCodeToDecimal(targetTempAirconRaw_), 1));
+    push(fCurrentTempAircon_, "current_temp_aircon", String(tempCodeToDecimal(currentTempAirconRaw_), 1));
+    push(fCurrentTempRoom_, "current_temp_room", String(tempCodeToDecimal(currentTempRoomRaw_), 1));
 }
 
 // -----------------------------------------------------------------------------
@@ -216,6 +225,25 @@ std::vector<uint8_t> TrumaStatus::encodeAirconContent() {
     return c;
 }
 
+std::vector<uint8_t> TrumaStatus::encodeClockContent() {
+    commandCounter_ = (commandCounter_ + 1) % 0xFF;
+    std::vector<uint8_t> c(26, 0);
+    c[0] = commandCounter_;
+    c[1] = 0; // checksum placeholder
+    c[2] = pendingClockHour_;
+    c[3] = pendingClockMinute_;
+    c[4] = pendingClockSecond_;
+    c[5] = 0x01; // display_1 - must be 0x1
+    c[6] = 0x01; // display_2 - must be 0x1
+    c[7] = 0;    // display_3
+    c[8] = clockModeRaw_; // echo the mode (24h/12h) last reported by the CPplus
+    c[9] = 0;    // clock_source
+    c[10] = 0;   // display_4
+    c[11] = 0;   // display_5
+    // c[12..25] stay zero (unused - message length 0x0A only covers c[2..11])
+    return c;
+}
+
 std::vector<std::vector<uint8_t>> TrumaStatus::buildTransferFrames(uint8_t headerHi, uint8_t headerLo,
                                                                     std::vector<uint8_t> content) {
     // full = preamble(8) + header(2) + content(26) = 36 bytes
@@ -246,10 +274,22 @@ std::vector<std::vector<uint8_t>> TrumaStatus::buildTransferFrames(uint8_t heade
     return frames;
 }
 
+void TrumaStatus::requestClockSync(uint8_t hour, uint8_t minute, uint8_t second) {
+    pendingClockHour_ = hour;
+    pendingClockMinute_ = minute;
+    pendingClockSecond_ = second;
+    uploadClock_ = 2;
+    uploadWait_ = 3;
+}
+
 std::vector<std::vector<uint8_t>> TrumaStatus::buildPendingWriteFrames() {
     if (uploadAircon_ > 0) {
         uploadAircon_--;
         return buildTransferFrames(0x0C, 0x34, encodeAirconContent());
+    }
+    if (uploadClock_ > 0) {
+        uploadClock_--;
+        return buildTransferFrames(0x0A, 0x14, encodeClockContent());
     }
     return {};
 }

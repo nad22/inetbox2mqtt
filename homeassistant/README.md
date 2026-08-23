@@ -18,11 +18,21 @@ add-on) is enough to get the entities back if they were ever purged.
 | `binary_sensor.<root>_alive` | binary_sensor | LIN/CPplus link is active |
 | `sensor.<root>_release` | sensor | Firmware version |
 | `sensor.<root>_clock` | sensor | Clock reported by the CPplus panel |
-| `sensor.<root>_current_temp_room` | sensor | Current room temperature |
 | `climate.<root>_aventa` | **climate** | Full Aventa Comfort (2. Gen) aircon control |
 | `button.<root>_reboot` | button | Restart the ESP32 |
+| `update.<root>_firmware` | **update** | Firmware update availability, live install progress, and an "Install" button |
 
 `<root>` is the MQTT topic prefix configured in the web UI (default `truma`).
+
+## Firmware updates
+
+The device checks the configured OTA manifest URL for a new firmware version
+once after every boot, and also whenever you press "Nach Update suchen" in the
+web UI. The result is exposed as the `update.<root>_firmware` entity: its
+"Install" button in Home Assistant triggers the same background install as
+the web UI, and its state reflects live progress (downloading/installing)
+while the update is being applied - the device reboots automatically once
+done.
 
 ## The Aventa climate entity
 

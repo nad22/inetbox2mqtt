@@ -21,8 +21,8 @@ views:
             name: Firmware
           - entity: sensor.truma_clock
             name: CPplus Uhrzeit
-          - entity: sensor.truma_current_temp_room
-            name: Raumtemperatur
+          - entity: update.truma_firmware
+            name: Firmware-Update
 
       - type: button
         entity: button.truma_reboot

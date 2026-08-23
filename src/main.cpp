@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <time.h>
 
 #include "Pins.h"
 #include "AppConfig.h"
@@ -18,6 +19,7 @@
 #include "MqttManager.h"
 #include "WebPortal.h"
 #include "CommandLog.h"
+#include "OtaManager.h"
 #include "Version.h"
 
 static AppConfig g_config;
@@ -30,6 +32,42 @@ static uint32_t g_lastFullPublishMs = 0;
 static uint32_t g_lastChangedPublishMs = 0;
 static const uint32_t FULL_PUBLISH_INTERVAL_MS = 10000;
 static const uint32_t CHANGED_PUBLISH_INTERVAL_MS = 2000;
+
+// NTP -> CPplus clock sync. Only meaningful once WiFi is actually connected
+// (not in AP-fallback mode). Retries every few seconds until the ESP32 has
+// obtained a valid time from the NTP servers, then writes it to the CPplus
+// exactly once; re-synced once a day afterwards to correct RTC drift.
+static bool g_ntpConfigured = false;
+static uint32_t g_lastClockSyncMs = 0;
+static const uint32_t CLOCK_RESYNC_INTERVAL_MS = 24UL * 60UL * 60UL * 1000UL;
+
+static void serviceNtpClockSync() {
+    if (!WiFi.isConnected()) return;
+
+    if (!g_ntpConfigured) {
+        g_ntpConfigured = true;
+        configTzTime(g_config.ntpTimezone.c_str(), "pool.ntp.org", "time.nist.gov");
+    }
+
+    uint32_t now = millis();
+    if (g_lastClockSyncMs != 0 && now - g_lastClockSyncMs < CLOCK_RESYNC_INTERVAL_MS) return;
+
+    time_t nowSec = time(nullptr);
+    // Before NTP has synced, time() still returns a value near the epoch
+    // (1970-01-01). 1600000000 corresponds to 2020-09-13, so anything below
+    // that reliably means "not synced yet" - retry on the next call.
+    if (nowSec < 1600000000) return;
+
+    struct tm local;
+    if (!localtime_r(&nowSec, &local)) return;
+
+    g_lastClockSyncMs = now;
+    g_status.requestClockSync((uint8_t)local.tm_hour, (uint8_t)local.tm_min, (uint8_t)local.tm_sec);
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%02d:%02d:%02d", local.tm_hour, local.tm_min, local.tm_sec);
+    Serial.printf("[NTP] syncing CPplus clock to %s\n", buf);
+    CommandLog::add("system", "info", String("Uhrzeit per NTP an CPplus gesendet: ") + buf);
+}
 
 static void setLed(int pin, bool on) {
     if (pin < 0) return;
@@ -61,20 +99,34 @@ static void connectWifi() {
     WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
     if (g_config.isWifiConfigured()) {
+        // Total time budget before falling back to the AP. Deliberately long
+        // (~3 minutes): right after the vehicle's power is switched on, the
+        // router/AP itself may still be booting for a while, so a short
+        // timeout here would strand the device in AP mode even though the
+        // configured network becomes available shortly after.
+        const uint32_t WIFI_CONNECT_TIMEOUT_MS = 180000;
+        const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
+
         Serial.printf("[WiFi] connecting to '%s' (password length=%u) ...\n",
                       g_config.wifiSsid.c_str(), g_config.wifiPassword.length());
         WiFi.disconnect(true, false);
         delay(100);
         WiFi.begin(g_config.wifiSsid.c_str(), g_config.wifiPassword.c_str());
         uint32_t start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+        uint32_t lastAttempt = start;
+        while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS) {
             delay(250);
             setLed(PIN_LED_WIFI, (millis() / 250) % 2 == 0);
+            if (millis() - lastAttempt >= WIFI_RETRY_INTERVAL_MS) {
+                lastAttempt = millis();
+                Serial.println("[WiFi] still not connected, retrying WiFi.begin() (router may still be starting up) ...");
+                WiFi.begin(g_config.wifiSsid.c_str(), g_config.wifiPassword.c_str());
+            }
         }
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.printf("[WiFi] connect failed, status=%d (see WiFiType.h wl_status_t; "
+            Serial.printf("[WiFi] connect failed after %lu ms, status=%d (see WiFiType.h wl_status_t; "
                           "3=connected, 4=wrong password, 1/6=no such network)\n",
-                          (int)WiFi.status());
+                          (unsigned long)(millis() - start), (int)WiFi.status());
         }
     }
 
@@ -108,6 +160,20 @@ void setup() {
     g_mqtt.begin(g_config, &g_status);
     g_web.begin(g_config, &g_status, &g_lin, &g_mqtt);
 
+    if (WiFi.isConnected()) {
+        Serial.println("[OTA] checking for update after boot ...");
+        OtaCheckResult check = OtaManager::checkForUpdate(g_config.otaManifestUrl);
+        if (check.ok && check.updateAvailable) {
+            Serial.printf("[OTA] update available: %s -> %s\n",
+                          check.currentVersion.c_str(), check.latestVersion.c_str());
+            CommandLog::add("system", "info", "Update verfügbar: " + check.latestVersion);
+        } else if (!check.ok) {
+            Serial.printf("[OTA] boot update check failed: %s\n", check.error.c_str());
+        } else {
+            Serial.println("[OTA] firmware is up to date");
+        }
+    }
+
     Serial.println("[setup] done, entering main loop");
 }
 
@@ -119,6 +185,8 @@ void loop() {
     g_mqtt.loop();
     setLed(PIN_LED_MQTT, g_mqtt.isConnected());
 
+    serviceNtpClockSync();
+
     uint32_t now = millis();
     if (now - g_lastFullPublishMs >= FULL_PUBLISH_INTERVAL_MS) {
         g_lastFullPublishMs = now;
@@ -128,8 +196,8 @@ void loop() {
         g_mqtt.publish(true);
     }
 
-    if (g_web.consumeRebootRequest()) {
-        Serial.println("[main] reboot requested via web UI");
+    if (g_web.consumeRebootRequest() || OtaManager::consumeRebootRequest()) {
+        Serial.println("[main] reboot requested (web UI / OTA update)");
         delay(300);
         ESP.restart();
     }

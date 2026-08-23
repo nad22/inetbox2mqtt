@@ -1,6 +1,7 @@
 #include "MqttManager.h"
 #include "Version.h"
 #include "CommandLog.h"
+#include "OtaManager.h"
 #include <ArduinoJson.h>
 
 static MqttManager *g_instance = nullptr;
@@ -101,6 +102,20 @@ void MqttManager::handleMessage(char *topicC, uint8_t *payload, unsigned int len
         return;
     }
 
+    if (key == "ota_install") {
+        if (value == "INSTALL") {
+            OtaCheckResult last = OtaManager::getLastCheckResult();
+            if (last.updateAvailable && last.downloadUrl.length() > 0) {
+                bool started = OtaManager::startInstall(last.downloadUrl, last.latestVersion);
+                CommandLog::add("mqtt", started ? "applied" : "rejected",
+                                 "Update-Installation via Home Assistant angestoßen");
+            } else {
+                CommandLog::add("mqtt", "rejected", "ota_install: kein Update verfügbar");
+            }
+        }
+        return;
+    }
+
     if (status_->isSettable(key)) {
         if (status_->setByTopic(key, value)) {
             CommandLog::add("mqtt", "applied", key + " = " + value);
@@ -126,7 +141,33 @@ void MqttManager::publish(bool onlyChanged) {
     if (!onlyChanged) {
         client_.publish((topicStatusPrefix_ + "release").c_str(), FW_VERSION, true);
     }
+    publishOtaState();
 }
+
+// Publishes the Home Assistant "update" entity's state as JSON, using its
+// default schema (installed_version/latest_version/in_progress/update_percentage)
+// so no value_template is needed on the discovery side. Called on every
+// publish cycle so install progress (in_progress/update_percentage) tracks
+// live while a background OTA install is running.
+void MqttManager::publishOtaState() {
+    OtaCheckResult check = OtaManager::getLastCheckResult();
+    OtaProgress progress = OtaManager::getProgress();
+
+    JsonDocument d;
+    d["installed_version"] = FW_VERSION;
+    d["latest_version"] = check.updateAvailable ? check.latestVersion : String(FW_VERSION);
+    bool inProgress = (progress.phase == OtaPhase::Downloading || progress.phase == OtaPhase::Installing);
+    d["in_progress"] = inProgress;
+    if (inProgress && progress.bytesTotal > 0) {
+        d["update_percentage"] = (int)((progress.bytesDone * 100) / progress.bytesTotal);
+    } else {
+        d["update_percentage"] = nullptr;
+    }
+    String out;
+    serializeJson(d, out);
+    client_.publish((topicStatusPrefix_ + "ota_state").c_str(), out.c_str(), true);
+}
+
 
 // -----------------------------------------------------------------------------
 // Home Assistant MQTT discovery
@@ -181,7 +222,7 @@ void MqttManager::publishDiscovery() {
     const SensorDef sensors[] = {
         {"release", "Firmware Release", nullptr, nullptr},
         {"clock", "CPplus Clock", nullptr, nullptr},
-        {"current_temp_room", "Room Temperature", "temperature", "°C"},
+        {"current_temp_room", "Raumtemperatur", "temperature", "°C"},
     };
     for (auto &s : sensors) {
         JsonDocument d;
@@ -196,7 +237,7 @@ void MqttManager::publishDiscovery() {
     {
         JsonDocument d;
         d["name"] = "Aventa Aircon";
-        d["current_temperature_topic"] = st + "current_temp_room";
+        d["current_temperature_topic"] = st + "current_temp_aircon";
         d["temperature_command_topic"] = cmd + "target_temp_aircon";
         d["temperature_state_topic"] = st + "target_temp_aircon";
         d["min_temp"] = 16;
@@ -225,6 +266,21 @@ void MqttManager::publishDiscovery() {
         d["payload_press"] = "1";
         d["device_class"] = "restart";
         publishEntity("button", "reboot", d);
+    }
+
+    // --- firmware update entity -------------------------------------------------
+    // Uses the MQTT "update" component's default JSON schema (installed_version /
+    // latest_version / in_progress / update_percentage), published by
+    // publishOtaState(). Lets HA show update availability + live install
+    // progress, and trigger installation via its built-in "Install" button.
+    {
+        JsonDocument d;
+        d["name"] = "Firmware";
+        d["device_class"] = "firmware";
+        d["state_topic"] = st + "ota_state";
+        d["command_topic"] = cmd + "ota_install";
+        d["payload_install"] = "INSTALL";
+        publishEntity("update", "firmware", d);
     }
 
     discoveryPublished_ = true;

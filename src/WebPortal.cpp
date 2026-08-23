@@ -25,6 +25,10 @@ void WebPortal::handleGetStatus(AsyncWebServerRequest *request) {
     doc["mqtt"] = mqtt_->isConnected();
     doc["lin"] = lin_->isRegistered();
 
+    OtaCheckResult lastCheck = OtaManager::getLastCheckResult();
+    doc["updateAvailable"] = lastCheck.updateAvailable;
+    doc["latestVersion"] = lastCheck.latestVersion;
+
     JsonObject values = doc["values"].to<JsonObject>();
     std::vector<std::pair<String, String>> pairs;
     status_->collectPublishPairs(pairs, false);
@@ -44,6 +48,7 @@ void WebPortal::handleGetConfig(AsyncWebServerRequest *request) {
     doc["mqttTopicRoot"] = cfg_->mqttTopicRoot;
     doc["deviceName"] = cfg_->deviceName;
     doc["otaManifestUrl"] = cfg_->otaManifestUrl;
+    doc["ntpTimezone"] = cfg_->ntpTimezone;
     doc["fwVersion"] = FW_VERSION;
     // Passwords are intentionally never sent back to the browser.
     String out;
@@ -82,6 +87,30 @@ void WebPortal::handleOtaCheck(AsyncWebServerRequest *request) {
     serializeJson(doc, out);
     request->send(200, "application/json", out);
 }
+
+static const char *otaPhaseToString(OtaPhase phase) {
+    switch (phase) {
+        case OtaPhase::Downloading: return "downloading";
+        case OtaPhase::Installing: return "installing";
+        case OtaPhase::Success: return "success";
+        case OtaPhase::Error: return "error";
+        default: return "idle";
+    }
+}
+
+void WebPortal::handleOtaStatus(AsyncWebServerRequest *request) {
+    OtaProgress p = OtaManager::getProgress();
+    JsonDocument doc;
+    doc["phase"] = otaPhaseToString(p.phase);
+    doc["version"] = p.version;
+    doc["bytesDone"] = (uint32_t)p.bytesDone;
+    doc["bytesTotal"] = (uint32_t)p.bytesTotal;
+    if (p.phase == OtaPhase::Error) doc["error"] = p.error;
+    String out;
+    serializeJson(doc, out);
+    request->send(200, "application/json", out);
+}
+
 
 void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttManager *mqtt) {
     cfg_ = &cfg;
@@ -125,6 +154,7 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
             if (doc["mqttTopicRoot"].is<const char *>()) cfg_->mqttTopicRoot = doc["mqttTopicRoot"].as<String>();
             if (doc["deviceName"].is<const char *>()) cfg_->deviceName = doc["deviceName"].as<String>();
             if (doc["otaManifestUrl"].is<const char *>()) cfg_->otaManifestUrl = doc["otaManifestUrl"].as<String>();
+            if (doc["ntpTimezone"].is<const char *>()) cfg_->ntpTimezone = doc["ntpTimezone"].as<String>();
 
             AppConfigStore::save(*cfg_);
             CommandLog::add("web", "applied", "Konfiguration gespeichert, Neustart folgt");
@@ -161,10 +191,15 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
         handleOtaCheck(request);
     });
 
+    server_.on("/api/ota/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleOtaStatus(request);
+    });
+
     server_.on(
         "/api/ota/install", HTTP_POST, [](AsyncWebServerRequest *request) {},
         nullptr,
         [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            if (index + len != total) return;  // wait for the (small) JSON body to fully arrive
             JsonDocument doc;
             DeserializationError err = deserializeJson(doc, data, len);
             if (err || !doc["url"].is<const char *>()) {
@@ -172,24 +207,20 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
                 return;
             }
             String url = doc["url"].as<String>();
-            Serial.printf("[OTA] installing from %s ...\n", url.c_str());
-            String error;
-            bool ok = OtaManager::installFromUrl(url, error);
+            String version = doc["version"].is<const char *>() ? doc["version"].as<String>() : String("");
+            Serial.printf("[OTA] starting background install from %s ...\n", url.c_str());
+            bool started = OtaManager::startInstall(url, version);
             JsonDocument resp;
-            resp["ok"] = ok;
-            if (!ok) resp["error"] = error;
+            resp["ok"] = started;
+            if (!started) resp["error"] = "Installation läuft bereits";
             String out;
             serializeJson(resp, out);
-            request->send(ok ? 200 : 500, "application/json", out);
-            if (ok) {
-                Serial.println("[OTA] install ok, rebooting");
-                CommandLog::add("ota", "applied", "Update von " + url + " installiert");
-                g_rebootRequested = true;
-            } else {
-                Serial.printf("[OTA] install failed: %s\n", error.c_str());
-                CommandLog::add("ota", "rejected", "Update von " + url + " fehlgeschlagen: " + error);
+            request->send(started ? 200 : 409, "application/json", out);
+            if (started) {
+                CommandLog::add("ota", "info", "Update-Installation von " + url + " gestartet");
             }
         });
+
 
     server_.on(
         "/api/ota/upload", HTTP_POST,

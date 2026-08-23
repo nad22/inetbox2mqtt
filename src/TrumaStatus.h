@@ -8,9 +8,9 @@
 //
 // C++ port of the relevant parts of inetboxapp.py / conversions.py, scoped to
 // the Truma Aventa Comfort (2. Gen) air-conditioning unit. Combi heater /
-// hot-water control has been removed entirely; the only value still read
-// from the heater's status buffer is the current room temperature, which
-// feeds the Aventa climate entity's "current_temperature".
+// hot-water control has been removed entirely, including the room
+// temperature reading that used to come from the heater's status buffer (no
+// physical heater unit exists on this LIN bus, so it never carried real data).
 //
 // It owns:
 //   - the current status values (raw + human readable),
@@ -46,10 +46,16 @@ public:
 
     // ---- Outgoing buffer construction ----
     bool hasAirconUpload() const { return uploadAircon_ > 0; }
-    bool hasAnyUpload() const { return hasAirconUpload(); }
+    bool hasClockUpload() const { return uploadClock_ > 0; }
+    bool hasAnyUpload() const { return hasAirconUpload() || hasClockUpload(); }
+
+    // Requests that the given wall-clock time be written to the CPplus's own
+    // clock buffer (0x0A,0x14) on the next LIN poll cycle. Called once after
+    // boot once a valid NTP time is available (see main.cpp).
+    void requestClockSync(uint8_t hour, uint8_t minute, uint8_t second);
 
     // Builds the 7 LIN frames (each including its trailing checksum byte) for
-    // the pending aircon command buffer, if any.
+    // the pending aircon/clock command buffer, if any (aircon takes priority).
     std::vector<std::vector<uint8_t>> buildPendingWriteFrames();
 
     int &uploadWaitCounter() { return uploadWait_; }
@@ -57,14 +63,18 @@ public:
 private:
     // raw values
     uint8_t commandCounter_ = 1;
-    uint16_t currentTempRoomRaw_ = 0;
 
     uint8_t airconOperatingModeRaw_ = 0;   // 0 off,4 vent,5 cool,6 hot,7 auto
     uint8_t airconVentModeRaw_ = 114;      // 113 low,114 mid,115 high,116 night,119 auto
     uint16_t targetTempAirconRaw_ = 2990;  // ~= 26 degC
     uint8_t airconOn_ = 1;
+    uint16_t currentTempAirconRaw_ = 0;    // "actual" temp measured at the Aventa unit itself
+    uint16_t currentTempRoomRaw_ = 0;      // "actual" temp measured at the room's wall sensor
 
     uint16_t clockRaw_ = 0;
+    uint8_t clockModeRaw_ = 0;  // 0 = 24h, 1 = 12h - echoed back unchanged when writing the clock
+
+    uint8_t pendingClockHour_ = 0, pendingClockMinute_ = 0, pendingClockSecond_ = 0;
 
     bool alive_ = false;
     uint32_t aliveWindowStartMs_ = 0;
@@ -74,13 +84,15 @@ private:
     // publish-pending flags, one per published field, indexed by name below
     struct Flag { bool pending = false; };
     // We keep an explicit small table instead of a map for speed/simplicity.
-    Flag fCurrentTempRoom_,
-        fAirconOperatingMode_, fAirconVentMode_, fTargetTempAircon_, fClock_, fAlive_;
+    Flag fAirconOperatingMode_, fAirconVentMode_, fTargetTempAircon_, fClock_, fAlive_;
+    Flag fCurrentTempAircon_, fCurrentTempRoom_;
 
     int uploadAircon_ = 0;  // mirrors python "upload02_buffer" countdown
+    int uploadClock_ = 0;   // same countdown scheme, for the clock write buffer
     int uploadWait_ = 1;    // mirrors python "upload_wait"
 
     std::vector<uint8_t> encodeAirconContent();
+    std::vector<uint8_t> encodeClockContent();
     std::vector<std::vector<uint8_t>> buildTransferFrames(uint8_t headerHi, uint8_t headerLo,
                                                            std::vector<uint8_t> content);
 };

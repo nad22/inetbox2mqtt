@@ -17,6 +17,7 @@ AppConfig AppConfigStore::load() {
     cfg.deviceName        = prefs.getString("dev_name", "inetbox2mqtt");
     cfg.haDiscoveryEnabled = prefs.getBool("ha_disco", true);
     cfg.otaManifestUrl    = prefs.getString("ota_url", cfg.otaManifestUrl);
+    cfg.ntpTimezone       = prefs.getString("ntp_tz", cfg.ntpTimezone);
     cfg.mqttBootDiscardMs = prefs.getUInt("boot_discard", 4000);
     prefs.end();
     return cfg;
@@ -35,6 +36,7 @@ void AppConfigStore::save(const AppConfig &cfg) {
     prefs.putString("dev_name", cfg.deviceName);
     prefs.putBool("ha_disco", cfg.haDiscoveryEnabled);
     prefs.putString("ota_url", cfg.otaManifestUrl);
+    prefs.putString("ntp_tz", cfg.ntpTimezone);
     prefs.putUInt("boot_discard", cfg.mqttBootDiscardMs);
     prefs.end();
 }

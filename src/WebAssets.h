@@ -65,6 +65,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="row"><span>MQTT</span><span id="s_mqtt">-</span></div>
       <div class="row"><span>LIN / CPplus</span><span id="s_lin">-</span></div>
       <div class="row"><span>Firmware</span><span id="s_fw">-</span></div>
+      <div class="row"><span>Update</span><span id="s_update">-</span></div>
     </div>
     <div class="card">
       <h2>Truma Status</h2>
@@ -126,6 +127,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <input name="deviceName" value="inetbox2mqtt">
       <label>OTA Manifest-URL</label>
       <input name="otaManifestUrl" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label>Zeitzone (POSIX TZ, für Uhrzeit-Sync via NTP)</label>
+      <input name="ntpTimezone" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="CET-1CEST,M3.5.0,M10.5.0/3">
       <button class="action" type="submit">Speichern &amp; neu starten</button>
     </form>
 
@@ -179,6 +182,9 @@ async function refreshStatus(){
     document.getElementById('s_mqtt').innerHTML = '<span class="pill '+(d.mqtt?'on':'off')+'">'+(d.mqtt?'verbunden':'getrennt')+'</span>';
     document.getElementById('s_lin').innerHTML = '<span class="pill '+(d.lin?'on':'off')+'">'+(d.lin?'aktiv':'keine Daten')+'</span>';
     document.getElementById('s_fw').textContent = d.version;
+    document.getElementById('s_update').innerHTML = d.updateAvailable
+      ? '<b>verfügbar: '+d.latestVersion+'</b>'
+      : '<span class="pill on">aktuell</span>';
     let html='';
     for(const [k,v] of Object.entries(d.values)){ html += '<div class="row"><span>'+k+'</span><span>'+v+'</span></div>'; }
     document.getElementById('s_values').innerHTML = html;
@@ -209,7 +215,7 @@ async function reboot(){
 async function loadConfig(){
   const r = await fetch('/api/config'); const d = await r.json();
   const f = document.getElementById('cfgForm');
-  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName','otaManifestUrl']){
+  for(const k of ['wifiSsid','mqttHost','mqttPort','mqttUser','mqttTopicRoot','deviceName','otaManifestUrl','ntpTimezone']){
     if(f[k]) f[k].value = d[k] ?? '';
   }
   document.getElementById('ota_current').textContent = d.fwVersion ?? '-';
@@ -228,7 +234,8 @@ async function saveConfig(ev){
     mqttPassword: f.mqttPassword.value,
     mqttTopicRoot: f.mqttTopicRoot.value,
     deviceName: f.deviceName.value,
-    otaManifestUrl: f.otaManifestUrl.value
+    otaManifestUrl: f.otaManifestUrl.value,
+    ntpTimezone: f.ntpTimezone.value
   };
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if(r.ok){ toast('Gespeichert, Gerät startet neu ...'); } else { toast('Fehler beim Speichern'); }
@@ -236,6 +243,7 @@ async function saveConfig(ev){
 }
 
 let otaLatestUrl = '';
+let otaLatestVersion = '';
 async function otaCheck(){
   document.getElementById('ota_latest').textContent = 'suche ...';
   try{
@@ -244,6 +252,7 @@ async function otaCheck(){
     if(!d.ok){ toast('Fehler: '+d.error); document.getElementById('ota_latest').textContent = '-'; return; }
     document.getElementById('ota_latest').textContent = d.latestVersion + (d.updateAvailable ? ' (neu)' : ' (aktuell)');
     otaLatestUrl = d.downloadUrl;
+    otaLatestVersion = d.latestVersion;
     document.getElementById('ota_install_btn').disabled = !d.updateAvailable;
   }catch(e){ toast('Prüfung fehlgeschlagen'); document.getElementById('ota_latest').textContent = '-'; }
 }
@@ -304,14 +313,66 @@ async function otaWaitForReboot(){
 async function otaInstall(){
   if(!otaLatestUrl) return;
   if(!confirm('Update jetzt installieren? Das Gerät startet danach neu.')) return;
-  otaProgressBegin('Installiere Update ...');
+  document.getElementById('ota_install_btn').disabled = true;
+  document.getElementById('ota_upload_btn').disabled = true;
+  const box = document.getElementById('ota_progress');
+  box.classList.remove('error','ok');
+  box.classList.add('active');
+  document.getElementById('ota_progress_text').textContent = 'Update wird gestartet ...';
   try{
-    const r = await fetch('/api/ota/install', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: otaLatestUrl})});
+    const r = await fetch('/api/ota/install', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: otaLatestUrl, version: otaLatestVersion})});
     const d = await r.json();
-    if(d.ok){ otaProgressEnd('ok', 'Update erfolgreich installiert.'); otaWaitForReboot(); }
-    else { otaProgressEnd('error', 'Update fehlgeschlagen: '+d.error); }
-  }catch(e){ otaProgressEnd('ok', 'Verbindung getrennt - Gerät startet vermutlich neu.'); otaWaitForReboot(); }
+    if(d.ok){ otaPollStatus(); }
+    else { otaProgressEnd('error', 'Update konnte nicht gestartet werden: '+(d.error||'unbekannter Fehler')); }
+  }catch(e){ otaProgressEnd('error', 'Anfrage fehlgeschlagen, bitte erneut versuchen.'); }
 }
+
+// The install itself now runs on a background task on the device, so this
+// request returns immediately - actual progress (downloading/installing/
+// success/error) is polled from /api/ota/status, which the web server keeps
+// answering the whole time since it's no longer blocked by the install.
+function otaPhaseLabel(phase){
+  switch(phase){
+    case 'downloading': return 'Lade Update herunter';
+    case 'installing': return 'Installiere Update';
+    case 'success': return 'Update erfolgreich installiert';
+    case 'error': return 'Update fehlgeschlagen';
+    default: return 'Bereit';
+  }
+}
+let otaPollTimer = null;
+function otaPollStatus(){
+  if(otaPollTimer) return;
+  otaPollTimer = setInterval(async () => {
+    try{
+      const r = await fetch('/api/ota/status', {cache:'no-store'});
+      const d = await r.json();
+      const box = document.getElementById('ota_progress');
+      box.classList.add('active');
+      let text = otaPhaseLabel(d.phase);
+      if(d.phase === 'downloading' && d.bytesTotal > 0){
+        const pct = Math.round(d.bytesDone * 100 / d.bytesTotal);
+        text += ' (' + pct + '%, ' + Math.round(d.bytesDone/1024) + '/' + Math.round(d.bytesTotal/1024) + ' KB)';
+      }
+      document.getElementById('ota_progress_text').textContent = text + ' - Seite bitte offen lassen';
+
+      if(d.phase === 'success'){
+        clearInterval(otaPollTimer); otaPollTimer = null;
+        box.classList.remove('error'); box.classList.add('ok');
+        document.getElementById('ota_progress_text').textContent = 'Update erfolgreich installiert, Gerät startet neu ...';
+        otaWaitForReboot();
+      } else if(d.phase === 'error'){
+        clearInterval(otaPollTimer); otaPollTimer = null;
+        box.classList.remove('ok'); box.classList.add('error');
+        document.getElementById('ota_progress_text').textContent = 'Update fehlgeschlagen: ' + (d.error || 'unbekannter Fehler');
+        document.getElementById('ota_install_btn').disabled = !otaLatestUrl;
+        document.getElementById('ota_upload_btn').disabled = false;
+      }
+    }catch(e){ /* device momentarily unreachable while flashing, keep polling */ }
+  }, 1000);
+}
+
 async function otaUpload(){
   const f = document.getElementById('ota_file').files[0];
   if(!f){ toast('Bitte Datei auswählen'); return; }
