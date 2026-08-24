@@ -115,8 +115,13 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
         // struct offset 16-17) - no separate heater buffer is needed for these.
         currentTempAirconRaw_ = readLE(p, len, 10, 2); fCurrentTempAircon_.pending = true;
         currentTempRoomRaw_ = readLE(p, len, 18, 2); fCurrentTempRoom_.pending = true;
-        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u\n",
-                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_);
+        // Aventa light: found empirically (2026-08-24) by sniffing this
+        // buffer while toggling the physical light on the CPplus panel -
+        // this previously-unused 2-byte field went 0 (off) -> 20 (light
+        // level 1). Read-only for now; no write path confirmed yet.
+        lightRaw_ = readLE(p, len, 8, 2); fLight_.pending = true;
+        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u light_raw=%u\n",
+                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_, lightRaw_);
         return;
     }
     // STATUS_BUFFER_HEADER_03 = 0x0A, 0x15 (clock)
@@ -188,6 +193,8 @@ void TrumaStatus::collectPublishPairs(std::vector<std::pair<String, String>> &ou
     push(fTargetTempAircon_, "target_temp_aircon", String(tempCodeToDecimal(targetTempAirconRaw_), 1));
     push(fCurrentTempAircon_, "current_temp_aircon", String(tempCodeToDecimal(currentTempAirconRaw_), 1));
     push(fCurrentTempRoom_, "current_temp_room", String(tempCodeToDecimal(currentTempRoomRaw_), 1));
+    // Read-only, unconfirmed level mapping (raw = level * 20, e.g. 20 = level 1).
+    push(fLight_, "aircon_light_level", String((lightRaw_ + 10) / 20));
 }
 
 // -----------------------------------------------------------------------------

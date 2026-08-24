@@ -70,6 +70,13 @@ private:
     uint8_t airconOn_ = 1;
     uint16_t currentTempAirconRaw_ = 0;    // "actual" temp measured at the Aventa unit itself
     uint16_t currentTempRoomRaw_ = 0;      // "actual" temp measured at the room's wall sensor
+    // Aventa light: NOT part of the legacy python source or havanti's fork,
+    // found empirically (2026-08-24) by sniffing this same 0x12,0x35 buffer
+    // while toggling the physical light on the CPplus panel - p[8..9]
+    // (LE 16-bit) went 0 (off) -> 20 (light level 1). Levels 2-5 are an
+    // UNCONFIRMED guess (raw = level * 20); read-only for now, no write
+    // path has been reverse-engineered/tested yet.
+    uint16_t lightRaw_ = 0;
 
     uint16_t clockRaw_ = 0;
     uint8_t clockModeRaw_ = 0;  // 0 = 24h, 1 = 12h - echoed back unchanged when writing the clock
@@ -86,6 +93,7 @@ private:
     // We keep an explicit small table instead of a map for speed/simplicity.
     Flag fAirconOperatingMode_, fAirconVentMode_, fTargetTempAircon_, fClock_, fAlive_;
     Flag fCurrentTempAircon_, fCurrentTempRoom_;
+    Flag fLight_;
 
     int uploadAircon_ = 0;  // mirrors python "upload02_buffer" countdown
     int uploadClock_ = 0;   // same countdown scheme, for the clock write buffer

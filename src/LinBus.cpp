@@ -128,8 +128,18 @@ void LinBus::handleKnownFrame(const uint8_t frame[12]) {
             return;
         }
     }
-    // Unknown frame: nothing to do, the CPplus sends plenty of traffic we
-    // simply do not need to react to.
+    // Unknown frame: this firmware doesn't react to it, but log it raw so
+    // the bus can be sniffed for not-yet-reverse-engineered commands (e.g.
+    // the Aventa light on/off/level, which the CPplus panel might send as
+    // its own distinct 12-byte frame rather than through the aircon status
+    // buffer). Capture a serial log with the light off, then one with it
+    // toggled on, and diff the [SNIFF] lines to find the frame(s) that
+    // differ. Temporary diagnostic, same idea as the [STATUS] dump below.
+    {
+        String hex;
+        for (int i = 0; i < 12; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", frame[i]); hex += b; }
+        Serial.printf("[SNIFF] unknown frame: %s\n", hex.c_str());
+    }
 }
 
 void LinBus::loop() {
@@ -192,6 +202,14 @@ void LinBus::loop() {
                 std::vector<uint8_t> ack(RESP_BUFFER_ACK, RESP_BUFFER_ACK + 8);
                 ack.push_back(linChecksum(ack.data(), 8));
                 enqueueResponse(ack);
+            } else {
+                // Same 6-frame transfer shape, but not the aircon-status
+                // preamble this firmware knows about - log it raw so a
+                // different kind of download (e.g. carrying a light state)
+                // isn't silently dropped during a bus sniff.
+                String hex;
+                for (int i = 0; i < 30; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", buf[i]); hex += b; }
+                Serial.printf("[SNIFF] buffer download, unknown preamble: %s\n", hex.c_str());
             }
         }
         return;

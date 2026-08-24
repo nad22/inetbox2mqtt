@@ -223,6 +223,10 @@ void MqttManager::publishDiscovery() {
         {"release", "Firmware Release", nullptr, nullptr},
         {"clock", "CPplus Clock", nullptr, nullptr},
         {"current_temp_room", "Raumtemperatur", "temperature", "°C"},
+        // Read-only, unconfirmed level mapping (see TrumaStatus.cpp) - just
+        // surfaces whatever the CPplus panel currently has the Aventa light
+        // set to (0 = off, 1 = level 1, ...), no control from HA yet.
+        {"aircon_light_level", "Licht Stufe", nullptr, nullptr},
     };
     for (auto &s : sensors) {
         JsonDocument d;
