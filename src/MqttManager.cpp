@@ -282,11 +282,14 @@ void MqttManager::publishDiscovery() {
         d["brightness_state_topic"] = st + "aircon_light_level";
         d["brightness_scale"] = 5;
         d["on_command_type"] = "last";
-        // Required by recent HA versions for the brightness slider to show
-        // up at all - without it the entity silently falls back to an
-        // on/off-only toggle even though brightness_command_topic is set.
-        JsonArray colorModes = d["supported_color_modes"].to<JsonArray>();
-        colorModes.add("brightness");
+        // NOTE: do NOT add "supported_color_modes" here - that key only
+        // exists in the MQTT Light JSON schema. This entity uses the
+        // *default* (basic) schema, which validates its discovery config
+        // strictly and REJECTS THE WHOLE ENTITY if an unknown key like
+        // supported_color_modes is present (this was tried in 3.7.1 and
+        // broke the entity entirely - no toggle, no brightness, nothing).
+        // For the default schema, brightness_command_topic/brightness_state_topic
+        // + brightness_scale alone are sufficient for HA to show a slider.
         publishEntity("light", "aircon_light", d);
     }
 
