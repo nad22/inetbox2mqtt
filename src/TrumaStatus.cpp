@@ -117,8 +117,9 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
         currentTempRoomRaw_ = readLE(p, len, 18, 2); fCurrentTempRoom_.pending = true;
         // Aventa light: found empirically (2026-08-24) by sniffing this
         // buffer while toggling the physical light on the CPplus panel -
-        // this previously-unused 2-byte field went 0 (off) -> 20 (light
-        // level 1). Read-only for now; no write path confirmed yet.
+        // this previously-unused 2-byte field is 0 (off) or 20/40/60/80/100
+        // for light level 1-5 (CONFIRMED). Read-only for now; no write path
+        // confirmed yet.
         lightRaw_ = readLE(p, len, 8, 2); fLight_.pending = true;
         Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u light_raw=%u\n",
                       airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_, lightRaw_);
@@ -143,7 +144,8 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
 // Outgoing set() from MQTT / web UI
 // -----------------------------------------------------------------------------
 bool TrumaStatus::isSettable(const String &key) const {
-    return key == "aircon_operating_mode" || key == "aircon_vent_mode" || key == "target_temp_aircon";
+    return key == "aircon_operating_mode" || key == "aircon_vent_mode" || key == "target_temp_aircon" ||
+           key == "aircon_light" || key == "aircon_light_level";
 }
 
 bool TrumaStatus::setByTopic(const String &key, const String &value) {
@@ -166,6 +168,27 @@ bool TrumaStatus::setByTopic(const String &key, const String &value) {
     } else if (key == "target_temp_aircon") {
         targetTempAirconRaw_ = decimalToTempCode(value.toFloat(), true);
         fTargetTempAircon_.pending = true; airconField = true;
+    } else if (key == "aircon_light") {
+        // HA light entity on/off command (no explicit level attached).
+        // UNCONFIRMED/untested on real hardware whether the Aventa ECU
+        // actually reacts to this write - only the read side (p[8..9] in
+        // the 0x12,0x35 status buffer) has been verified so far.
+        if (value == "ON") {
+            lightRaw_ = (uint16_t)(lastNonZeroLightLevel_ * 20);
+        } else if (value == "OFF") {
+            lightRaw_ = 0;
+        } else {
+            return false;
+        }
+        fLight_.pending = true; fLightState_.pending = true; airconField = true;
+    } else if (key == "aircon_light_level") {
+        // 0 = off, 1-5 = level, mirrors the confirmed read-side mapping
+        // (raw = level * 20). Write direction is UNCONFIRMED/untested.
+        int level = value.toInt();
+        if (level < 0 || level > 5) return false;
+        lightRaw_ = (uint16_t)(level * 20);
+        if (level > 0) lastNonZeroLightLevel_ = (uint8_t)level;
+        fLight_.pending = true; fLightState_.pending = true; airconField = true;
     } else {
         return false;
     }
@@ -193,8 +216,9 @@ void TrumaStatus::collectPublishPairs(std::vector<std::pair<String, String>> &ou
     push(fTargetTempAircon_, "target_temp_aircon", String(tempCodeToDecimal(targetTempAirconRaw_), 1));
     push(fCurrentTempAircon_, "current_temp_aircon", String(tempCodeToDecimal(currentTempAirconRaw_), 1));
     push(fCurrentTempRoom_, "current_temp_room", String(tempCodeToDecimal(currentTempRoomRaw_), 1));
-    // Read-only, unconfirmed level mapping (raw = level * 20, e.g. 20 = level 1).
+    // Read-only-derived. Confirmed mapping: raw = level * 20 (0 = off, 20/40/60/80/100 = level 1-5).
     push(fLight_, "aircon_light_level", String((lightRaw_ + 10) / 20));
+    push(fLightState_, "aircon_light_state", lightRaw_ > 0 ? "ON" : "OFF");
 }
 
 // -----------------------------------------------------------------------------
@@ -228,7 +252,15 @@ std::vector<uint8_t> TrumaStatus::encodeAirconContent() {
     c[5] = airconOn_;
     c[6] = targetTempAirconRaw_ & 0xFF;
     c[7] = (targetTempAirconRaw_ >> 8) & 0xFF;
-    // c[8..25] stay zero (dummy)
+    // Aventa light control: write the desired level back into the exact
+    // same byte position (LE 16-bit) it is read from in the 0x12,0x35
+    // status buffer (p[8..9], struct offset 6-7) - mirrors how mode/vent/
+    // target are also read and written at identical offsets. UNCONFIRMED on
+    // real hardware whether the ECU actually applies it; needs on-vehicle
+    // verification.
+    c[8] = lightRaw_ & 0xFF;
+    c[9] = (lightRaw_ >> 8) & 0xFF;
+    // c[10..25] stay zero (dummy)
     return c;
 }
 

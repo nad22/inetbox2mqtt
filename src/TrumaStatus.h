@@ -73,10 +73,16 @@ private:
     // Aventa light: NOT part of the legacy python source or havanti's fork,
     // found empirically (2026-08-24) by sniffing this same 0x12,0x35 buffer
     // while toggling the physical light on the CPplus panel - p[8..9]
-    // (LE 16-bit) went 0 (off) -> 20 (light level 1). Levels 2-5 are an
-    // UNCONFIRMED guess (raw = level * 20); read-only for now, no write
-    // path has been reverse-engineered/tested yet.
+    // (LE 16-bit) is 0 (off) or 20/40/60/80/100 for light level 1-5
+    // (CONFIRMED by user on real hardware). Also used as the write-side
+    // desired value (see encodeAirconContent()) - writing back to the same
+    // byte position it was read from is UNCONFIRMED/untested on real
+    // hardware, needs on-vehicle verification.
     uint16_t lightRaw_ = 0;
+    // Remembers the last non-zero light level (1-5) so an "on" command that
+    // arrives without an explicit level (e.g. HA's light on_command_type
+    // "last") knows which level to restore.
+    uint8_t lastNonZeroLightLevel_ = 1;
 
     uint16_t clockRaw_ = 0;
     uint8_t clockModeRaw_ = 0;  // 0 = 24h, 1 = 12h - echoed back unchanged when writing the clock
@@ -93,7 +99,7 @@ private:
     // We keep an explicit small table instead of a map for speed/simplicity.
     Flag fAirconOperatingMode_, fAirconVentMode_, fTargetTempAircon_, fClock_, fAlive_;
     Flag fCurrentTempAircon_, fCurrentTempRoom_;
-    Flag fLight_;
+    Flag fLight_, fLightState_;
 
     int uploadAircon_ = 0;  // mirrors python "upload02_buffer" countdown
     int uploadClock_ = 0;   // same countdown scheme, for the clock write buffer

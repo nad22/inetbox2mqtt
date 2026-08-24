@@ -223,10 +223,6 @@ void MqttManager::publishDiscovery() {
         {"release", "Firmware Release", nullptr, nullptr},
         {"clock", "CPplus Clock", nullptr, nullptr},
         {"current_temp_room", "Raumtemperatur", "temperature", "°C"},
-        // Read-only, unconfirmed level mapping (see TrumaStatus.cpp) - just
-        // surfaces whatever the CPplus panel currently has the Aventa light
-        // set to (0 = off, 1 = level 1, ...), no control from HA yet.
-        {"aircon_light_level", "Licht Stufe", nullptr, nullptr},
     };
     for (auto &s : sensors) {
         JsonDocument d;
@@ -260,6 +256,26 @@ void MqttManager::publishDiscovery() {
         JsonArray fans = d["fan_modes"].to<JsonArray>();
         fans.add("low"); fans.add("mid"); fans.add("high"); fans.add("night"); fans.add("auto");
         publishEntity("climate", "aventa", d);
+    }
+
+    // --- Aventa light (on/off + 5 levels) ---------------------------------------
+    // Read side (0/20/40/60/80/100 raw -> level 0-5) is CONFIRMED on real
+    // hardware. Write side (this entity's command topics) mirrors the exact
+    // same buffer byte position on the way out (see TrumaStatus::
+    // encodeAirconContent()) but is UNCONFIRMED/untested - the ECU may or
+    // may not actually react to it.
+    {
+        JsonDocument d;
+        d["name"] = "Licht";
+        d["command_topic"] = cmd + "aircon_light";
+        d["state_topic"] = st + "aircon_light_state";
+        d["payload_on"] = "ON";
+        d["payload_off"] = "OFF";
+        d["brightness_command_topic"] = cmd + "aircon_light_level";
+        d["brightness_state_topic"] = st + "aircon_light_level";
+        d["brightness_scale"] = 5;
+        d["on_command_type"] = "last";
+        publishEntity("light", "aircon_light", d);
     }
 
     // --- reboot button ---------------------------------------------------------

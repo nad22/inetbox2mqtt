@@ -94,6 +94,15 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       </select>
       <label>Zieltemperatur (&deg;C)</label>
       <input type="number" id="c_target_temp_aircon" min="16" max="32" step="1">
+      <label>Licht</label>
+      <select id="c_aircon_light_level">
+        <option value="0">Aus</option>
+        <option value="1">Stufe 1</option>
+        <option value="2">Stufe 2</option>
+        <option value="3">Stufe 3</option>
+        <option value="4">Stufe 4</option>
+        <option value="5">Stufe 5</option>
+      </select>
       <button class="action" onclick="sendAircon()">Übernehmen</button>
     </div>
     <div class="card">
@@ -234,7 +243,7 @@ async function refreshStatus(){
     let html='';
     for(const [k,v] of Object.entries(d.values)){ html += '<div class="row"><span>'+k+'</span><span>'+v+'</span></div>'; }
     document.getElementById('s_values').innerHTML = html;
-    for(const key of ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon']){
+    for(const key of ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon','aircon_light_level']){
       const el = document.getElementById('c_'+key);
       if(el && d.values[key]!==undefined && document.activeElement!==el) el.value = d.values[key];
     }
@@ -251,6 +260,7 @@ function sendAircon(){
   setValue('aircon_operating_mode', document.getElementById('c_aircon_operating_mode').value);
   setValue('aircon_vent_mode', document.getElementById('c_aircon_vent_mode').value);
   setValue('target_temp_aircon', document.getElementById('c_target_temp_aircon').value);
+  setValue('aircon_light_level', document.getElementById('c_aircon_light_level').value);
 }
 async function reboot(){
   if(!confirm('Gerät wirklich neu starten?')) return;
