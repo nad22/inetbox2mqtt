@@ -206,6 +206,13 @@ void MqttManager::publishDiscovery() {
         }
     };
 
+    // --- one-time cleanup ---------------------------------------------------
+    // An older firmware version published a plain read-only "aircon_light_level"
+    // sensor entity, now superseded by the "light" entity below. Publish an
+    // empty retained payload to that old discovery topic so Home Assistant
+    // removes the stale duplicate entity from its registry.
+    client_.publish(("homeassistant/sensor/" + root + "/aircon_light_level/config").c_str(), "", true);
+
     // --- alive binary sensor -------------------------------------------------
     {
         JsonDocument d;
@@ -275,6 +282,11 @@ void MqttManager::publishDiscovery() {
         d["brightness_state_topic"] = st + "aircon_light_level";
         d["brightness_scale"] = 5;
         d["on_command_type"] = "last";
+        // Required by recent HA versions for the brightness slider to show
+        // up at all - without it the entity silently falls back to an
+        // on/off-only toggle even though brightness_command_topic is set.
+        JsonArray colorModes = d["supported_color_modes"].to<JsonArray>();
+        colorModes.add("brightness");
         publishEntity("light", "aircon_light", d);
     }
 

@@ -230,6 +230,17 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
   document.getElementById(b.dataset.tab).classList.add('active');
 }));
 
+// Aircon control fields: while the user is editing one of these (even after
+// moving focus to another field, before clicking "Übernehmen"), the periodic
+// status refresh below must not overwrite it with the device's current value
+// - otherwise a slow click on "Übernehmen" can silently lose the edit.
+const controlKeys = ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon','aircon_light_level'];
+const dirtyControlFields = new Set();
+controlKeys.forEach(key=>{
+  const el = document.getElementById('c_'+key);
+  if(el) el.addEventListener('input', ()=>dirtyControlFields.add(key));
+});
+
 async function refreshStatus(){
   try{
     const r = await fetch('/api/status'); const d = await r.json();
@@ -243,9 +254,9 @@ async function refreshStatus(){
     let html='';
     for(const [k,v] of Object.entries(d.values)){ html += '<div class="row"><span>'+k+'</span><span>'+v+'</span></div>'; }
     document.getElementById('s_values').innerHTML = html;
-    for(const key of ['aircon_operating_mode','aircon_vent_mode','target_temp_aircon','aircon_light_level']){
+    for(const key of controlKeys){
       const el = document.getElementById('c_'+key);
-      if(el && d.values[key]!==undefined && document.activeElement!==el) el.value = d.values[key];
+      if(el && d.values[key]!==undefined && document.activeElement!==el && !dirtyControlFields.has(key)) el.value = d.values[key];
     }
   }catch(e){/* device busy, ignore */}
 }
@@ -261,6 +272,7 @@ function sendAircon(){
   setValue('aircon_vent_mode', document.getElementById('c_aircon_vent_mode').value);
   setValue('target_temp_aircon', document.getElementById('c_target_temp_aircon').value);
   setValue('aircon_light_level', document.getElementById('c_aircon_light_level').value);
+  dirtyControlFields.clear();
 }
 async function reboot(){
   if(!confirm('Gerät wirklich neu starten?')) return;
