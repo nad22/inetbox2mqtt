@@ -18,7 +18,9 @@ add-on) is enough to get the entities back if they were ever purged.
 | `binary_sensor.<root>_alive` | binary_sensor | LIN/CPplus link is active |
 | `sensor.<root>_release` | sensor | Firmware version |
 | `sensor.<root>_clock` | sensor | Clock reported by the CPplus panel |
-| `climate.<root>_aventa` | **climate** | Full Aventa Comfort (2. Gen) aircon control |
+| `sensor.<root>_current_temp_room` | sensor | Room temperature from the wall-mounted sensor |
+| `climate.<root>_aventa` | **climate** | Full Aventa Comfort (2. Gen) aircon control, incl. current temperature (measured at the unit itself) |
+| `light.<root>_aircon_light` | **light** | Aventa's built-in light, on/off + 5 brightness levels |
 | `button.<root>_reboot` | button | Restart the ESP32 |
 | `update.<root>_firmware` | **update** | Firmware update availability, live install progress, and an "Install" button |
 
@@ -56,6 +58,20 @@ The `climate.aventa` entity maps directly onto the Aventa's own vocabulary:
 
 Target temperature range is 16-32°C in 1°C steps (the Aventa itself typically
 only accepts 20-30°C - out-of-range values are simply ignored by the CPplus).
+
+## The Aventa light
+
+The `light.<root>_aircon_light` entity controls the Aventa's built-in light
+(the same one you can switch on the physical CPplus panel). It supports a
+simple on/off toggle plus 5 brightness levels, shown in Home Assistant as a
+brightness slider with 5 steps (`brightness_scale: 5`, so HA's slider value
+0-5 maps 1:1 onto the Aventa's own level 0 (off) - 5).
+
+The read side (what level the light is currently set to) is fully confirmed
+on real hardware. The write side (setting a level from Home Assistant) mirrors
+the exact same underlying LIN buffer byte position, by analogy with how
+mode/fan-mode/target-temperature already work symmetrically for both
+reading and writing, and has also been confirmed working on real hardware.
 
 ## Example dashboard card
 

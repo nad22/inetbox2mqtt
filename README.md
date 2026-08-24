@@ -33,10 +33,14 @@ Home Assistant.
   Access Point so you can reach that same web page.
 - **Focused on the Truma Aventa Comfort (2. Gen)** air-conditioning unit.
   Combi heater / hot-water control and monitoring has been **removed
-  entirely** (only the current room temperature is still read from its
-  status buffer, since it feeds the Aventa climate entity's current
-  temperature); DuoControl and MPU6050 spirit-level add-ons from the
-  upstream project were dropped too, to keep the rewrite maintainable.
+  entirely** (both the room temperature and the unit's own current
+  temperature are read straight out of the Aventa's own status buffer, no
+  separate heater buffer is needed for these); DuoControl and MPU6050
+  spirit-level add-ons from the upstream project were dropped too, to keep
+  the rewrite maintainable.
+- **Aventa light control** (on/off + 5 levels), read from and written to the
+  same LIN status buffer, exposed as a proper Home Assistant `light` entity
+  and via the web UI - not present in the upstream project at all.
 - **Stale MQTT commands are discarded on (re)connect.** See
   [below](#why-stale-commands-are-discarded).
 - **Native Home Assistant `climate` entity** for the aircon instead of a set
@@ -49,7 +53,8 @@ Home Assistant.
   reads status, writes commands) - protocol-compatible with CPplus ≥ C4.00.00
 - MQTT status/control with Home Assistant MQTT auto-discovery
 - Built-in web UI (no app, no cloud) for Wi-Fi/MQTT setup **and** for
-  monitoring/controlling the aircon directly from the ESP32
+  monitoring/controlling the aircon and its built-in light directly from the
+  ESP32
 - Automatically falls back to a configuration Access Point when no working
   Wi-Fi connection is available
 - Discards MQTT messages that were queued/retained on the broker before boot,
@@ -89,7 +94,8 @@ notes on older CPplus versions).
    reboots and joins your network.
 6. Open the same web UI on your normal network (check your router, or the
    serial monitor, for the assigned IP) to watch status and to control the
-   aircon/heater directly, without needing MQTT/Home Assistant at all.
+   aircon and its built-in light directly, without needing MQTT/Home
+   Assistant at all.
 
 ## Registering with the CPplus (INIT process)
 
@@ -123,6 +129,10 @@ Default topic prefix is `truma` (configurable in the web UI); topics are
 | `aircon_operating_mode` | `off`/`vent`/`cool`/`hot`/`auto` | Aventa operating mode |
 | `aircon_vent_mode` | `low`/`mid`/`high`/`night`/`auto` | Aventa fan mode |
 | `target_temp_aircon` | °C | Aventa target temperature |
+| `current_temp_aircon` | °C | Actual temperature measured at the Aventa unit itself |
+| `current_temp_room` | °C | Actual temperature measured at the wall-mounted room sensor |
+| `aircon_light_state` | `ON`/`OFF` | Aventa light on/off |
+| `aircon_light_level` | `0`-`5` | Aventa light level (`0` = off) |
 
 ### Commands (subscribe / publish to)
 
@@ -131,6 +141,8 @@ Default topic prefix is `truma` (configurable in the web UI); topics are
 | `aircon_operating_mode` | `off`/`vent`/`cool`/`hot`/`auto` | Set Aventa mode |
 | `aircon_vent_mode` | `low`/`mid`/`high`/`night`/`auto` | Set Aventa fan mode |
 | `target_temp_aircon` | °C (16-32) | Set Aventa target temperature |
+| `aircon_light` | `ON`/`OFF` | Turn the Aventa light on/off (ON restores the last-used level) |
+| `aircon_light_level` | `0`-`5` | Set the Aventa light level directly (`0` = off) |
 | `reboot` | `1` | Reboot the ESP32 |
 
 For the Aventa, only certain `aircon_operating_mode` / `aircon_vent_mode`
