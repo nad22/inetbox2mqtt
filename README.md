@@ -215,6 +215,38 @@ passive eavesdropping but not against an active man-in-the-middle on the
 network path to GitHub. If you need stronger guarantees, use the manual
 upload flow over a trusted local network instead of the repo-based check.
 
+## Troubleshooting / debug logging
+
+The **Log** tab has a **Debug-Logs aktivieren** switch. It's off by default
+(normal operation stays quiet) and takes effect immediately, no reboot
+needed. Turning it on makes the firmware print extra detail to the serial
+console (115200 baud):
+
+- **LIN**: raw hex dump of every decoded status buffer and of any 12-byte
+  (or 6-frame buffer-download) frame that doesn't match a known pattern
+  (`[SNIFF] ...`).
+- **MQTT**: every value published (`[MQTT] publish ...`) and failed connect
+  attempts with the PubSubClient error code.
+
+Two extra rows on the **Status** tab help without a serial monitor attached:
+
+- **LIN registriert** - `ja` once the CPplus's init/registration handshake
+  has completed at least once since boot; stays `ja` for the rest of the
+  boot session even if the bus later goes quiet. If this never turns `ja`,
+  the CPplus is not completing the "recognize this as an inetbox" handshake
+  at all.
+- **Unbekannte LIN-Frames** - counts frames the firmware saw but couldn't
+  match against any known pattern. A number that keeps climbing while "LIN
+  registriert" stays `nein` means the CPplus *is* sending something, just
+  not what this firmware currently expects to see.
+
+The **LIN / CPplus** row (unlike "LIN registriert") reflects a rolling ~60s
+window of alive-polls, so it correctly flips back to "keine Daten" if the
+bus goes silent later in a session, not just during the initial handshake.
+Connect/disconnect transitions for WiFi, MQTT and LIN alive-polls are also
+written to the **Log** tab's event log even with debug logging off, since
+those are rare, high-value events rather than per-frame noise.
+
 ## Disclaimer
 
 This project simulates a TRUMA inetbox on the LIN bus. It only works with a

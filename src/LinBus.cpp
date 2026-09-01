@@ -1,5 +1,7 @@
 #include "LinBus.h"
 #include "LinChecksum.h"
+#include "CommandLog.h"
+#include "DebugLog.h"
 #include <cstring>
 
 // -----------------------------------------------------------------------------
@@ -93,7 +95,10 @@ void LinBus::generateInetUpload() {
 // Raw PID 0xD8 corresponds to PID 0x18 with parity bits: this is the periodic
 // "are you alive / do you have something to send" poll from the CPplus.
 void LinBus::handleAlivePoll() {
-    registered_ = true;
+    if (!registered_) {
+        registered_ = true;
+        CommandLog::add("system", "info", "LIN: CPplus hat den ESP als inetbox erkannt (Registrierung ok)");
+    }
     status_->markAlivePoll();
     setLinLed(true);
 
@@ -128,14 +133,14 @@ void LinBus::handleKnownFrame(const uint8_t frame[12]) {
             return;
         }
     }
-    // Unknown frame: this firmware doesn't react to it, but log it raw so
-    // the bus can be sniffed for not-yet-reverse-engineered commands (e.g.
-    // the Aventa light on/off/level, which the CPplus panel might send as
-    // its own distinct 12-byte frame rather than through the aircon status
-    // buffer). Capture a serial log with the light off, then one with it
-    // toggled on, and diff the [SNIFF] lines to find the frame(s) that
-    // differ. Temporary diagnostic, same idea as the [STATUS] dump below.
-    {
+    // Unknown frame: this firmware doesn't react to it. Always count it (see
+    // unknownFrameCount_ in LinBus.h) so the web UI can show whether the bus
+    // is producing traffic this firmware fails to recognize even without a
+    // serial monitor attached; only dump the raw bytes to Serial when debug
+    // logging is enabled, since this can fire frequently and the extra
+    // blocking Serial I/O would itself add jitter to the LIN byte parser.
+    unknownFrameCount_++;
+    if (DebugLog::enabled()) {
         String hex;
         for (int i = 0; i < 12; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", frame[i]); hex += b; }
         Serial.printf("[SNIFF] unknown frame: %s\n", hex.c_str());
@@ -204,12 +209,16 @@ void LinBus::loop() {
                 enqueueResponse(ack);
             } else {
                 // Same 6-frame transfer shape, but not the aircon-status
-                // preamble this firmware knows about - log it raw so a
-                // different kind of download (e.g. carrying a light state)
-                // isn't silently dropped during a bus sniff.
-                String hex;
-                for (int i = 0; i < 30; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", buf[i]); hex += b; }
-                Serial.printf("[SNIFF] buffer download, unknown preamble: %s\n", hex.c_str());
+                // preamble this firmware knows about - count it, and (with
+                // debug logging enabled) log it raw so a different kind of
+                // download (e.g. carrying a light state) isn't silently
+                // dropped during a bus sniff.
+                unknownFrameCount_++;
+                if (DebugLog::enabled()) {
+                    String hex;
+                    for (int i = 0; i < 30; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", buf[i]); hex += b; }
+                    Serial.printf("[SNIFF] buffer download, unknown preamble: %s\n", hex.c_str());
+                }
             }
         }
         return;

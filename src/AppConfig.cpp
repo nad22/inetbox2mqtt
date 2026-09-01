@@ -19,6 +19,7 @@ AppConfig AppConfigStore::load() {
     cfg.otaManifestUrl    = prefs.getString("ota_url", cfg.otaManifestUrl);
     cfg.ntpTimezone       = prefs.getString("ntp_tz", cfg.ntpTimezone);
     cfg.mqttBootDiscardMs = prefs.getUInt("boot_discard", 4000);
+    cfg.debugLogging      = prefs.getBool("debug_log", false);
     prefs.end();
     return cfg;
 }
@@ -38,6 +39,7 @@ void AppConfigStore::save(const AppConfig &cfg) {
     prefs.putString("ota_url", cfg.otaManifestUrl);
     prefs.putString("ntp_tz", cfg.ntpTimezone);
     prefs.putUInt("boot_discard", cfg.mqttBootDiscardMs);
+    prefs.putBool("debug_log", cfg.debugLogging);
     prefs.end();
 }
 

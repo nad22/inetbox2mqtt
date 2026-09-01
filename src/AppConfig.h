@@ -39,6 +39,11 @@ struct AppConfig {
     // messages from unintentionally driving the aircon right after boot.
     uint32_t mqttBootDiscardMs = 4000;
 
+    // Verbose LIN/MQTT/WLAN diagnostic logging (see DebugLog.h). Off by
+    // default so normal operation stays quiet; toggled at runtime from the
+    // web UI's Einrichtung tab via POST /api/debug (no reboot needed).
+    bool debugLogging = false;
+
     bool isWifiConfigured() const { return wifiSsid.length() > 0; }
 };
 

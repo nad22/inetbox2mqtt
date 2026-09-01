@@ -64,6 +64,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="row"><span>WLAN</span><span id="s_wifi">-</span></div>
       <div class="row"><span>MQTT</span><span id="s_mqtt">-</span></div>
       <div class="row"><span>LIN / CPplus</span><span id="s_lin">-</span></div>
+      <div class="row"><span>LIN registriert</span><span id="s_lin_reg">-</span></div>
+      <div class="row"><span>Unbekannte LIN-Frames</span><span id="s_lin_unk">-</span></div>
       <div class="row"><span>Firmware</span><span id="s_fw">-</span></div>
       <div class="row"><span>Update</span><span id="s_update">-</span></div>
     </div>
@@ -208,6 +210,14 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
   <section id="log">
     <div class="card">
+      <h2>Diagnose</h2>
+      <p style="font-size:.8rem;color:#666;margin-top:0">Schreibt zusätzliche LIN-/MQTT-/WLAN-Details auf die serielle Konsole (z.B. rohe LIN-Frames, MQTT-Publishes) - hilfreich um Verbindungsprobleme (z.B. "CPplus erkennt ESP nicht" oder "LIN inaktiv") zu untersuchen. Wirkt sofort, kein Neustart nötig. Im Normalbetrieb ausgeschaltet lassen.</p>
+      <label style="display:flex;align-items:center;gap:.5rem;font-weight:normal">
+        <input type="checkbox" id="debugLogging" onchange="toggleDebugLogging(this)" style="width:auto">
+        Debug-Logs aktivieren
+      </label>
+    </div>
+    <div class="card">
       <h2>Ereignis-Log</h2>
       <p style="font-size:.8rem;color:#666;margin-top:0">Letzte Befehle/Ereignisse inkl. Quelle. "mqtt" bedeutet nur, dass die Nachricht über den MQTT-Broker ankam - MQTT selbst übermittelt keine Absender-Kennung. "web" = über dieses Webinterface, "ota" = Firmware-Update, "system" = Gerät selbst.</p>
       <div id="log_entries"><i>lädt ...</i></div>
@@ -247,6 +257,8 @@ async function refreshStatus(){
     document.getElementById('s_wifi').textContent = d.wifi;
     document.getElementById('s_mqtt').innerHTML = '<span class="pill '+(d.mqtt?'on':'off')+'">'+(d.mqtt?'verbunden':'getrennt')+'</span>';
     document.getElementById('s_lin').innerHTML = '<span class="pill '+(d.lin?'on':'off')+'">'+(d.lin?'aktiv':'keine Daten')+'</span>';
+    document.getElementById('s_lin_reg').innerHTML = '<span class="pill '+(d.linRegistered?'on':'off')+'">'+(d.linRegistered?'ja':'nein')+'</span>';
+    document.getElementById('s_lin_unk').textContent = d.linUnknownFrames ?? 0;
     document.getElementById('s_fw').textContent = d.version;
     document.getElementById('s_update').innerHTML = d.updateAvailable
       ? '<b>verfügbar: '+d.latestVersion+'</b>'
@@ -301,8 +313,14 @@ async function loadConfig(){
   document.getElementById('ntpTimezoneCustom').value = tz;
   onTimezoneSelectChange();
   document.getElementById('ota_current').textContent = d.fwVersion ?? '-';
+  document.getElementById('debugLogging').checked = !!d.debugLogging;
 }
 loadConfig();
+
+async function toggleDebugLogging(cb){
+  const r = await fetch('/api/debug', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: cb.checked})});
+  if(r.ok){ toast(cb.checked ? 'Debug-Logs aktiviert' : 'Debug-Logs deaktiviert'); } else { cb.checked = !cb.checked; toast('Fehler beim Speichern'); }
+}
 
 async function saveConfig(ev){
   ev.preventDefault();

@@ -19,6 +19,7 @@
 #include "MqttManager.h"
 #include "WebPortal.h"
 #include "CommandLog.h"
+#include "DebugLog.h"
 #include "OtaManager.h"
 #include "Version.h"
 
@@ -85,6 +86,7 @@ static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
                       "15/204=handshake timeout - often also a wrong password, "
                       "200=beacon timeout - AP out of range/wrong band, 201=SSID not found)\n",
                       (int)info.wifi_sta_disconnected.reason);
+        CommandLog::add("system", "info", "WLAN getrennt, reason=" + String((int)info.wifi_sta_disconnected.reason));
     }
 }
 
@@ -134,6 +136,7 @@ static void connectWifi() {
         Serial.printf("[WiFi] connected, IP=%s\n", WiFi.localIP().toString().c_str());
         WiFi.softAPdisconnect(true);
         setLed(PIN_LED_WIFI, true);
+        CommandLog::add("system", "info", "WLAN verbunden, IP=" + WiFi.localIP().toString());
     } else {
         String apName = "inetbox2mqtt-" + String((uint32_t)ESP.getEfuseMac(), HEX);
         Serial.printf("[WiFi] starting fallback AP '%s' (open, no password)\n", apName.c_str());
@@ -153,6 +156,7 @@ void setup() {
     if (PIN_LED_MQTT >= 0) pinMode(PIN_LED_MQTT, OUTPUT);
 
     g_config = AppConfigStore::load();
+    DebugLog::setEnabled(g_config.debugLogging);
 
     connectWifi();
 

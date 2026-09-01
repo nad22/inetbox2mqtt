@@ -1,6 +1,7 @@
 #include "MqttManager.h"
 #include "Version.h"
 #include "CommandLog.h"
+#include "DebugLog.h"
 #include "OtaManager.h"
 #include <ArduinoJson.h>
 
@@ -57,14 +58,21 @@ void MqttManager::reconnect() {
         client_.subscribe(haStatusTopic_.c_str(), 1);
         client_.publish(aliveTopic.c_str(), "ON", true);
         if (cfg_.haDiscoveryEnabled) publishDiscovery();
+        CommandLog::add("system", "info", "MQTT verbunden");
+    } else if (DebugLog::enabled()) {
+        Serial.printf("[MQTT] connect attempt failed, rc=%d\n", client_.state());
     }
 }
 
 void MqttManager::loop() {
-    if (!client_.connected()) {
+    bool wasConnected = client_.connected();
+    if (!wasConnected) {
         reconnect();
     } else {
         client_.loop();
+    }
+    if (wasConnected && !client_.connected()) {
+        CommandLog::add("system", "info", "MQTT Verbindung verloren");
     }
 }
 
@@ -134,7 +142,7 @@ void MqttManager::publish(bool onlyChanged) {
     status_->collectPublishPairs(pairs, onlyChanged);
     for (auto &kv : pairs) {
         client_.publish((topicStatusPrefix_ + kv.first).c_str(), kv.second.c_str(), true);
-        if (kv.first == "target_temp_aircon" || kv.first == "aircon_vent_mode" || kv.first == "aircon_operating_mode" || kv.first == "current_temp_room") {
+        if (DebugLog::enabled()) {
             Serial.printf("[MQTT] publish %s = %s\n", kv.first.c_str(), kv.second.c_str());
         }
     }

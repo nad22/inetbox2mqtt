@@ -1,5 +1,7 @@
 #include "TrumaStatus.h"
 #include "LinChecksum.h"
+#include "CommandLog.h"
+#include "DebugLog.h"
 #include <cstring>
 #include <cmath>
 
@@ -81,12 +83,14 @@ TrumaStatus::TrumaStatus() {}
 // Incoming buffer decoding
 // -----------------------------------------------------------------------------
 void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint8_t *p, size_t len) {
-    // Temporary diagnostic: log every status buffer the CPplus pushes to us,
+    // Verbose diagnostic: log every status buffer the CPplus pushes to us,
     // so it's possible to check via the serial monitor whether the Aventa
     // aircon status buffer (0x12,0x35) is actually being received at all,
-    // and with which raw byte values, when current_temp_room / target_temp
-    // stay stuck at 0.
-    {
+    // and with which raw byte values. Gated behind the debug-logging toggle
+    // (off by default) - this used to be unconditional, but printing a hex
+    // dump for every single buffer adds several ms of blocking Serial I/O
+    // that can itself delay servicing the next LIN byte in LinBus::loop().
+    if (DebugLog::enabled()) {
         String hex;
         for (size_t i = 0; i < len; i++) { char b[4]; snprintf(b, sizeof(b), "%02X ", p[i]); hex += b; }
         Serial.printf("[STATUS] buffer %02X,%02X (%u bytes): %s\n", bufIdHi, bufIdLo, (unsigned)len, hex.c_str());
@@ -121,8 +125,10 @@ void TrumaStatus::applyStatusBuffer(uint8_t bufIdHi, uint8_t bufIdLo, const uint
         // for light level 1-5 (CONFIRMED). Read-only for now; no write path
         // confirmed yet.
         lightRaw_ = readLE(p, len, 8, 2); fLight_.pending = true;
-        Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u light_raw=%u\n",
-                      airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_, lightRaw_);
+        if (DebugLog::enabled()) {
+            Serial.printf("[STATUS] aircon status decoded: mode=%u vent=%u target_raw=%u current_aircon_raw=%u current_room_raw=%u light_raw=%u\n",
+                          airconOperatingModeRaw_, airconVentModeRaw_, targetTempAirconRaw_, currentTempAirconRaw_, currentTempRoomRaw_, lightRaw_);
+        }
         return;
     }
     // STATUS_BUFFER_HEADER_03 = 0x0A, 0x15 (clock)
@@ -235,7 +241,12 @@ void TrumaStatus::evaluateAliveWindow() {
     bool wasAlive = alive_;
     alive_ = aliveSeenInWindow_;
     aliveSeenInWindow_ = false;
-    if (wasAlive != alive_) fAlive_.pending = true;
+    if (wasAlive != alive_) {
+        fAlive_.pending = true;
+        CommandLog::add("system", "info",
+                         alive_ ? "LIN: Alive-Polls werden wieder empfangen"
+                                : "LIN: seit ~60s keine Alive-Polls mehr empfangen (Verbindung verloren?)");
+    }
 }
 
 // -----------------------------------------------------------------------------

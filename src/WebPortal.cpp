@@ -2,6 +2,7 @@
 #include "WebAssets.h"
 #include "Version.h"
 #include "CommandLog.h"
+#include "DebugLog.h"
 #include "OtaManager.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -23,7 +24,14 @@ void WebPortal::handleGetStatus(AsyncWebServerRequest *request) {
     doc["wifi"] = (WiFi.getMode() == WIFI_AP) ? ("AP: " + WiFi.softAPIP().toString())
                                                : (WiFi.isConnected() ? WiFi.localIP().toString() : "getrennt");
     doc["mqtt"] = mqtt_->isConnected();
-    doc["lin"] = lin_->isRegistered();
+    // "lin" reflects the rolling ~60s alive-poll window (TrumaStatus::isAlive()),
+    // so it correctly goes back to false if the bus later falls silent.
+    // "linRegistered" is sticky for the whole boot session (true from the
+    // first successful alive-poll onward) and distinguishes "never completed
+    // the CPplus init handshake this boot" from "was fine, then went quiet".
+    doc["lin"] = status_->isAlive();
+    doc["linRegistered"] = lin_->isRegistered();
+    doc["linUnknownFrames"] = lin_->unknownFrameCount();
 
     OtaCheckResult lastCheck = OtaManager::getLastCheckResult();
     doc["updateAvailable"] = lastCheck.updateAvailable;
@@ -49,6 +57,7 @@ void WebPortal::handleGetConfig(AsyncWebServerRequest *request) {
     doc["deviceName"] = cfg_->deviceName;
     doc["otaManifestUrl"] = cfg_->otaManifestUrl;
     doc["ntpTimezone"] = cfg_->ntpTimezone;
+    doc["debugLogging"] = cfg_->debugLogging;
     doc["fwVersion"] = FW_VERSION;
     // Passwords are intentionally never sent back to the browser.
     String out;
@@ -186,6 +195,27 @@ void WebPortal::begin(AppConfig &cfg, TrumaStatus *status, LinBus *lin, MqttMana
     server_.on("/api/log", HTTP_GET, [this](AsyncWebServerRequest *request) {
         handleGetLog(request);
     });
+
+    // Separate from /api/config on purpose: toggling debug logging should
+    // take effect immediately and not force a reboot (unlike WiFi/MQTT
+    // changes), since it's meant to be flipped on quickly while an
+    // intermittent LIN/MQTT/WLAN issue is actively being investigated.
+    server_.on(
+        "/api/debug", HTTP_POST, [](AsyncWebServerRequest *request) {},
+        nullptr,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, data, len);
+            if (err || !doc["enabled"].is<bool>()) {
+                request->send(400, "application/json", "{\"error\":\"invalid json\"}");
+                return;
+            }
+            cfg_->debugLogging = doc["enabled"].as<bool>();
+            DebugLog::setEnabled(cfg_->debugLogging);
+            AppConfigStore::save(*cfg_);
+            CommandLog::add("web", "applied", String("Debug-Logs ") + (cfg_->debugLogging ? "aktiviert" : "deaktiviert"));
+            request->send(200, "application/json", "{\"ok\":true}");
+        });
 
     server_.on("/api/ota/check", HTTP_GET, [this](AsyncWebServerRequest *request) {
         handleOtaCheck(request);

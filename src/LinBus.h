@@ -26,11 +26,21 @@ public:
     // true once the CPplus has been observed polling us (registration done)
     bool isRegistered() const { return registered_; }
 
+    // Count of 12-byte frames (or 6-frame buffer downloads) that did not
+    // match any known pattern since boot. A rising count while "registered"
+    // stays false during the init handshake is a strong signal that the
+    // CPplus IS sending something but this firmware isn't recognizing it
+    // (bus noise, an unexpected variant, or wrong byte content) - useful for
+    // diagnosing "CPplus doesn't see the ESP as an inetbox" reports without
+    // needing a serial monitor attached in the vehicle.
+    uint32_t unknownFrameCount() const { return unknownFrameCount_; }
+
 private:
     HardwareSerial serial_{LIN_UART_NUM};
     TrumaStatus *status_ = nullptr;
     int linLedPin_ = -1;
     bool registered_ = false;
+    uint32_t unknownFrameCount_ = 0;
 
     std::vector<std::vector<uint8_t>> responseQueue_;
 
